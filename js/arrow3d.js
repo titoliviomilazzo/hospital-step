@@ -50,7 +50,7 @@ export async function renderArrow3d(container, angle = 0) {
   if (!container.isConnected) return null;
   disposeArrow3d();
   try {
-    const size = 200;
+    const size = 280;
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
     renderer.setSize(size, size, false); // CSS scales the canvas (style.css .arrow-holder canvas)

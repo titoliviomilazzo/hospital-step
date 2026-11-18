@@ -1,21 +1,41 @@
 // State machine and rendering. `nextState` is pure and importable in Node; the DOM boot at the
 // bottom runs only in a browser. Later stages hook in at the EXTENSION POINT comments.
 import { loadRoute } from './route.js';
-import { FIELDS, FIXED_CLIPS, optionFor, HELP_SENTENCE, HELP_SPEECH, REASK_HOSPITAL_SPEECH } from './clips.js';
+import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_SENTENCE, HELP_SPEECH, REASK_HOSPITAL_SPEECH } from './clips.js';
 import { loadState, saveState } from './storage.js';
 import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking } from './voice.js';
-import { createListener, isSupported as listenSupported } from './listen.js';
+import { createListener } from './listen.js';
 import { parseVisit } from './intent.js';
 import { arrowAngle, bearingDeg, startCompass } from './compass.js';
 import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
+import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode } from './pictos.js';
 import { WEBHOOK_URL } from '../config.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
 const STAGE_LABEL = { prepare: '1단계 방문 준비', travel: '2단계 이동 안내', indoor: '3단계 병원 안' };
 const CLIP_TEXT = Object.fromEntries(FIXED_CLIPS.map((c) => [c.clipId, c.text]));
 const SIGN_FALLBACK = '표지판을 따라가세요. 어려우면 직원에게 물어보세요.';
+const STEP_CLIP = {
+  hospital: 'q-hospital', visit: 'q-visit', mobility: 'q-mobility', reception: 'q-reception',
+  confirm: 'confirm-all', checklist: 'checklist-screen',
+};
+// On-screen sentence of the two wizard screens whose spoken clip is too long for three lines of 36px.
+const STEP_SCREEN_TEXT = { confirm: '이렇게 가시는 게 맞나요?', checklist: '신분증과 진료의뢰서를 챙기세요.' };
+const ARRIVED_TEXT = '안내를 모두 마쳤습니다.';
+// Items shown on the "what to bring" screen when data/support.json is missing.
+const FALLBACK_ITEMS = ['신분증', '진료의뢰서'];
+// Screen 1 is a wizard: one question per screen, then confirm, then the checklist.
+export const WIZARD_STEPS = [...QUESTION_STEPS, 'confirm', 'checklist'];
+const BLANK_FIELDS = { hospital: null, visit: null, mobility: null, reception: null };
+const BLANK_MANUAL = { hospital: false, visit: false, mobility: false, reception: false };
+
+/** First question (in order, optionally only after `after`) whose field is still empty, or null. */
+function firstUnfilled(fields, after = null) {
+  const start = after === null ? 0 : QUESTION_STEPS.indexOf(after) + 1;
+  return QUESTION_STEPS.slice(start).find((id) => fields[id] === null) ?? null;
+}
 
 // ---------------------------------------------------------------- pure state
 
@@ -23,18 +43,45 @@ export function initialState(lastPointId = null) {
   return {
     index: -1, // -1 is the prepare screen, otherwise the index into route.points
     arrived: false,
-    fields: { hospital: null, visit: null, mobility: null, reception: null },
-    // true for a field the user set with [수정]; such a value wins over parsing. Memory only.
-    manual: { hospital: false, visit: false, mobility: false, reception: false },
+    prepStep: 'hospital', // wizard step while index is -1, one of WIZARD_STEPS
+    editing: false, // true after [수정]: the next answer returns to the confirm screen
+    fields: { ...BLANK_FIELDS },
+    // true for a field the user answered with a button; such a value wins over parsing. Memory only.
+    manual: { ...BLANK_MANUAL },
     lastPointId,
     helpOpen: false,
     settingsOpen: false,
-    chooser: null, // field id while the chooser is open
+    companionOpen: false,
   };
 }
 
 export function screenOf(state, route) {
   return state.index < 0 ? 'prepare' : route.points[state.index].stage;
+}
+
+/** Header progress: "cur / total". On the wizard the four questions count; later screens are 4 / 4. */
+export function progressOf(state, route) {
+  if (state.index >= 0) return { cur: route.points[state.index].order, total: route.points.length };
+  const i = QUESTION_STEPS.indexOf(state.prepStep);
+  return { cur: i < 0 ? QUESTION_STEPS.length : i + 1, total: QUESTION_STEPS.length };
+}
+
+/**
+ * The fixed bar's primary button: its label, whether it shows, and what it does. The button always
+ * keeps its place in the bar; on a question screen it shows `→ 다음` only once that question has an
+ * answer, otherwise it is invisible and disabled (the answers themselves are in the main area).
+ */
+export function barPrimary(state, route) {
+  if (state.index < 0) {
+    if (QUESTION_STEPS.includes(state.prepStep)) {
+      return { label: '→ 다음', visible: state.fields[state.prepStep] !== null, action: 'next' };
+    }
+    if (state.prepStep === 'confirm') return { label: '→ 길 안내 시작', visible: true, action: 'next' };
+    return { label: '→ 챙겼어요', visible: true, action: 'start' };
+  }
+  if (state.arrived) return { label: '직원에게 보여주기', visible: true, action: 'show' };
+  const p = route.points[state.index];
+  return { label: `→ ${p.confirmLabel || '여기에 도착했어요'}`, visible: true, action: 'confirm' };
 }
 
 /** Index to resume at: the point after the last confirmed one, or null when there is none. */
@@ -65,7 +112,9 @@ export function nextState(state, action, route) {
         ? { ...state, index: -1, arrived: false }
         : { ...state, index: state.index - 1, arrived: false };
     case 'RESTART':
-      return { ...state, index: -1, arrived: false };
+      // A new start: the previous visit answers are dropped so the next person is asked afresh.
+      return { ...state, index: -1, arrived: false, prepStep: 'hospital', editing: false,
+        fields: { ...BLANK_FIELDS }, manual: { ...BLANK_MANUAL } };
     case 'SET_FIELD': {
       if (!FIELD_IDS.includes(action.field)) return state;
       if (action.value !== null && !optionFor(action.field, action.value)) return state;
@@ -73,25 +122,71 @@ export function nextState(state, action, route) {
         ...state,
         fields: { ...state.fields, [action.field]: action.value },
         manual: { ...state.manual, [action.field]: true },
-        chooser: null,
       };
     }
+    case 'ANSWER': {
+      // A button answer on a question screen. Moves to the next unanswered question, or to the
+      // confirm screen when none is left or when the answer was an edit from the confirm screen.
+      if (state.index >= 0 || !QUESTION_STEPS.includes(action.field) || !optionFor(action.field, action.value)) return state;
+      const fields = { ...state.fields, [action.field]: action.value };
+      return {
+        ...state,
+        fields,
+        manual: { ...state.manual, [action.field]: true },
+        prepStep: state.editing ? 'confirm' : (firstUnfilled(fields) ?? 'confirm'),
+        editing: false,
+      };
+    }
+    case 'WIZARD_NEXT': {
+      if (state.index >= 0) return state;
+      if (state.editing) return { ...state, prepStep: 'confirm', editing: false };
+      if (QUESTION_STEPS.includes(state.prepStep)) {
+        return { ...state, prepStep: firstUnfilled(state.fields, state.prepStep) ?? 'confirm' };
+      }
+      return state.prepStep === 'confirm' ? { ...state, prepStep: 'checklist' } : state;
+    }
+    case 'WIZARD_BACK': {
+      // Stays inside the wizard. Returning to a question reopens it, so a spoken answer can replace it.
+      if (state.index >= 0) return state;
+      const reopen = (id) => ({ ...state, prepStep: id, editing: false, manual: { ...state.manual, [id]: false } });
+      if (state.editing) return { ...state, prepStep: 'confirm', editing: false };
+      if (state.prepStep === 'checklist') return { ...state, prepStep: 'confirm' };
+      if (state.prepStep === 'confirm') return reopen(QUESTION_STEPS[QUESTION_STEPS.length - 1]);
+      const i = QUESTION_STEPS.indexOf(state.prepStep);
+      return i > 0 ? reopen(QUESTION_STEPS[i - 1]) : state;
+    }
+    case 'EDIT_FIELD':
+      if (state.index >= 0 || !QUESTION_STEPS.includes(action.field)) return state;
+      return { ...state, prepStep: action.field, editing: true, manual: { ...state.manual, [action.field]: false } };
     case 'SET_FIELDS': {
       // Merges a parsed sentence: only valid non-null parsed values are written, and a field the
       // user set with [수정] keeps its value.
+      // On a question screen a sentence that carried any valid value moves the wizard on: to the
+      // confirm screen after an edit that answered the edited field, else to the next unanswered one.
       const src = action.fields || {};
       const fields = { ...state.fields };
+      let heardAny = false;
       for (const id of FIELD_IDS) {
-        if (state.manual && state.manual[id]) continue;
         const v = src[id] ?? null;
-        if (v !== null && optionFor(id, v)) fields[id] = v;
+        const valid = v !== null && optionFor(id, v);
+        if (valid) heardAny = true;
+        if (state.manual && state.manual[id]) continue;
+        if (valid) fields[id] = v;
       }
-      return { ...state, fields, chooser: null };
+      let { prepStep, editing } = state;
+      if (state.index < 0 && QUESTION_STEPS.includes(prepStep) && heardAny) {
+        if (editing) {
+          if (optionFor(prepStep, src[prepStep] ?? null)) { prepStep = 'confirm'; editing = false; }
+        } else {
+          prepStep = firstUnfilled(fields) ?? 'confirm';
+        }
+      }
+      return { ...state, fields, prepStep, editing };
     }
-    case 'OPEN_CHOOSER':
-      return FIELD_IDS.includes(action.field) ? { ...state, chooser: action.field } : state;
-    case 'CLOSE_CHOOSER':
-      return { ...state, chooser: null };
+    case 'OPEN_COMPANION':
+      return { ...state, companionOpen: true };
+    case 'CLOSE_COMPANION':
+      return { ...state, companionOpen: false };
     case 'OPEN_HELP':
       return { ...state, helpOpen: true };
     case 'CLOSE_HELP':
@@ -159,7 +254,7 @@ function boot(route, support) {
   let reAsk = null;
   let parsing = false;
   let parseToken = 0;
-  let typedOpen = !listenSupported();
+  let typedOpen = false;
   let typedText = '';
   let listening = false;
   let listenMsg = null;
@@ -177,11 +272,26 @@ function boot(route, support) {
   preloadManifest();
   const persist = () => saveState({ settings, lastPointId: state.lastPointId });
 
-  function dispatch(action) {
+  /** Drops what was heard on a wizard screen (the sentence, its badge, typed text, messages). */
+  function clearHeard() {
+    utterance = null;
+    badge = null;
+    reAsk = null;
+    typedText = '';
+    typedOpen = false;
+    listenMsg = null;
+  }
+
+  function dispatch(action, { keepHeard = false } = {}) {
     const prev = state;
     state = nextState(state, action, route);
     if (state.lastPointId !== prev.lastPointId) persist();
     if (prev.index < 0 && state.index >= 0) leavePrepare();
+    else if (!keepHeard && prev.prepStep !== state.prepStep) {
+      parseToken += 1; // a sentence still being parsed belongs to the screen that was left
+      parsing = false;
+      clearHeard();
+    }
     render();
   }
 
@@ -189,11 +299,7 @@ function boot(route, support) {
   function leavePrepare() {
     parseToken += 1;
     parsing = false;
-    utterance = null;
-    badge = null;
-    reAsk = null;
-    typedText = '';
-    listenMsg = null;
+    clearHeard();
     listener.stop();
   }
 
@@ -201,105 +307,166 @@ function boot(route, support) {
     return state.index >= 0 ? route.points[state.index] : null;
   }
 
+  /** Plays the clip of the wizard screen that is showing. */
+  function sayStep() {
+    const id = STEP_CLIP[state.prepStep];
+    return say(id, CLIP_TEXT[id]);
+  }
+
   function sayCurrent() {
     const p = currentPoint();
-    if (!p) return say('prep-prompt', CLIP_TEXT['prep-prompt']);
-    if (state.arrived) return say('arrive-main', CLIP_TEXT['arrive-main']);
+    if (!p) return sayStep();
+    if (state.arrived) return speakThen(say('arrive-main', CLIP_TEXT['arrive-main']), () => say('arrive-show', CLIP_TEXT['arrive-show']));
     return say(p.id, p.speech);
   }
 
   // ------------------------------------------------------------ screens
 
-  function renderPrepare() {
-    const main = h('div', { class: 'stack' });
+  /** A big full-width answer button: leading symbol, then the label. */
+  function answerButton(sym, label, attrs) {
+    const { class: extra, ...rest } = attrs;
+    return h('button', { type: 'button', ...rest, class: `btn answer${extra ? ` ${extra}` : ''}` },
+      h('span', { class: 'sym', 'aria-hidden': 'true' }, sym), h('span', { class: 'answer-text' }, label));
+  }
 
-    const talk = h('div', { class: 'talk' },
-      h('button', { class: 'btn', id: 'btn-talk', disabled: !listenSupported() || parsing, onclick: onTalk },
-        listening ? '듣는 중... 눌러서 끝내기' : '누르고 말하기'),
-      h('button', { class: 'btn small ghost', id: 'btn-typed-toggle', 'aria-expanded': String(typedOpen),
-        onclick: () => { typedOpen = !typedOpen; render(); } }, '말하기 대신 직접 입력하기'));
-    if (listenMsg) talk.append(h('p', { class: 'muted', role: 'status' }, listenMsg));
+  function heardCard() {
+    return h('div', { class: 'card', id: 'heard' },
+      h('p', { class: 'muted' }, '들은 말 (이 화면을 닫으면 사라져요)'),
+      h('p', { class: 'quote' }, utterance),
+      badge ? h('span', { class: 'badge', id: 'parse-badge' }, badge) : null,
+      reAsk ? h('p', { class: 'reask', id: 'reask', role: 'status' }, reAsk) : null);
+  }
+
+  function renderQuestion(step) {
+    const field = FIELDS.find((f) => f.id === step);
+    const main = h('div', { class: 'stack' });
+    if (utterance) main.append(heardCard());
+
+    const answers = h('div', { class: 'answers' });
+    for (const o of field.options) {
+      const ui = ANSWER_BUTTONS[field.id][o.value];
+      const selected = state.fields[field.id] === o.value;
+      answers.append(answerButton(ui.sym, ui.label, {
+        'data-value': o.value,
+        'aria-current': selected ? 'true' : null,
+        class: selected ? 'selected' : '',
+        onclick: () => {
+          dispatch({ type: 'ANSWER', field: field.id, value: o.value });
+          speakThen(say(o.clipId, o.phrase), () => sayStep());
+        },
+      }));
+    }
+    main.append(answers);
+
+    main.append(answerButton('🎤', listening ? '듣는 중... 눌러서 끝내기' : '말로 대답하기',
+      { id: 'btn-talk', class: 'talk-btn', disabled: parsing, onclick: onTalk }));
+    if (listenMsg) main.append(h('p', { class: 'note', role: 'status' }, listenMsg));
     if (typedOpen) {
-      talk.append(
-        h('label', { for: 'typed-text', class: 'muted' }, '방문 내용을 적어 주세요.'),
+      main.append(h('div', { class: 'typed' },
+        h('label', { for: 'typed-text', class: 'note' }, '방문 내용을 적어 주세요.'),
         h('textarea', { id: 'typed-text', rows: 2, oninput: (e) => { typedText = e.target.value; } }, typedText),
         h('button', { class: 'btn', id: 'btn-typed-go', disabled: parsing,
-          onclick: () => interpret(typedText) }, '이 내용으로 채우기'));
+          onclick: () => interpret(typedText) }, '이 내용으로 채우기')));
     }
-    main.append(talk);
-    if (parsing) main.append(h('p', { class: 'muted', role: 'status' }, '해석하는 중이에요...'));
-    if (utterance) {
-      main.append(
-        h('div', { class: 'card', id: 'heard' },
-          h('p', { class: 'muted' }, '들은 말 (이 화면을 닫으면 사라져요)'),
-          h('p', { class: 'quote' }, utterance),
-          badge ? h('span', { class: 'badge', id: 'parse-badge' }, badge) : null,
-          reAsk ? h('p', { class: 'reask', id: 'reask', role: 'status' }, reAsk) : null),
-      );
-    }
-    main.append(h('p', { class: 'muted' }, '아래 [수정] 버튼으로 직접 고를 수도 있어요.'));
+    if (parsing) main.append(h('p', { class: 'note', role: 'status' }, '해석하는 중이에요...'));
 
-    const fields = h('div', { class: 'card' });
-    for (const f of FIELDS) {
-      const opt = optionFor(f.id, state.fields[f.id]);
-      fields.append(
-        h('div', { class: 'field' },
-          h('span', { class: 'field-label' }, f.label),
-          h('span', { class: opt ? 'field-value' : 'field-value unknown' }, opt ? opt.label : '아직 몰라요'),
-          h('button', { class: 'btn small', 'aria-label': `${f.label} 수정`,
-            onclick: () => {
-              openerSel = `[aria-label="${f.label} 수정"]`;
-              dispatch({ type: 'OPEN_CHOOSER', field: f.id });
-            } }, '수정')),
-      );
-    }
-    main.append(fields);
-
-    const ri = resumeIndex(state, route);
+    const ri = step === 'hospital' ? resumeIndex(state, route) : null;
     if (ri !== null) {
-      main.append(
-        h('button', { class: 'btn wide', id: 'btn-resume', onclick: () => {
-          dispatch({ type: 'RESUME' });
-          speakThen(say('ui-resume', CLIP_TEXT['ui-resume']), () => sayCurrent());
-        } }, `이어서 안내 받기 (${ri + 1}번째 지점)`),
-      );
+      main.append(h('button', { class: 'btn wide', id: 'btn-resume', onclick: () => {
+        dispatch({ type: 'RESUME' });
+        speakThen(say('ui-resume', CLIP_TEXT['ui-resume']), () => sayCurrent());
+      } }, `이어서 안내 받기 (${ri + 1}번째 지점)`));
     }
-
-    if (support) {
-      const list = h('div', { class: 'card' }, h('h2', {}, '챙길 것'));
-      support.visitChecklist.items.forEach((item, i) => {
-        list.append(h('label', { class: 'check' },
-          h('input', { type: 'checkbox', id: `chk-${i}` }), h('span', {}, item)));
-      });
-      list.append(
-        h('button', { class: 'btn small', onclick: () => say('prep-checklist', CLIP_TEXT['prep-checklist']) }, '챙길 것 듣기'),
-        h('details', {}, h('summary', {}, '자세히'),
-          row('출처', support.visitChecklist.source)),
-      );
-      main.append(list);
-
-      main.append(
-        h('div', { class: 'card' },
-          h('h2', {}, `${support.city} 동행 신청`),
-          h('p', {}, '혼자 사시거나 사실상 혼자 지내시는 분(노인가구, 한부모가정 등)은 병원 동행을 신청할 수 있어요.'),
-          h('a', { class: 'btn wide link', href: support.onlineUrl, target: '_blank', rel: 'noopener noreferrer' },
-            '성남시 동행 신청 열기'),
-          h('details', {}, h('summary', {}, '자세히'),
-            row('사업', support.program),
-            row('대상', support.target),
-            row('이용 요금', support.fee),
-            row('운영 시간', support.hours),
-            row('문의', `${support.contact.name} ${support.contact.phone}`),
-            row('출처', `${support.source.name} ${support.source.url}`),
-            row('확인한 날', support.retrieved))),
-      );
-    }
+    const footer = wizardFooter();
+    if (footer) main.append(footer);
     return main;
   }
 
+  function renderConfirm() {
+    const main = h('div', { class: 'stack' });
+    if (utterance) main.append(heardCard());
+    const rows = h('div', { class: 'confirm-rows' });
+    for (const f of FIELDS) {
+      const opt = optionFor(f.id, state.fields[f.id]);
+      rows.append(h('div', { class: 'confirm-row' },
+        h('div', { class: 'confirm-text' },
+          h('span', { class: 'confirm-label' }, f.label),
+          h('span', { class: opt ? 'confirm-value' : 'confirm-value unknown' }, opt ? opt.label : '아직 몰라요')),
+        h('button', { class: 'btn edit-btn', 'aria-label': `${f.label} 수정`, 'data-field': f.id, onclick: () => {
+          openerSel = `[aria-label="${f.label} 수정"]`;
+          dispatch({ type: 'EDIT_FIELD', field: f.id });
+          sayStep();
+        } }, '수정')));
+    }
+    main.append(rows);
+    if (support) {
+      main.append(h('button', { class: 'btn wide secondary', id: 'btn-companion', onclick: () => {
+        openerSel = '#btn-companion';
+        dispatch({ type: 'OPEN_COMPANION' });
+      } }, '동행 신청 알아보기'));
+    }
+    const footer = wizardFooter();
+    if (footer) main.append(footer);
+    return main;
+  }
+
+  function renderChecklist() {
+    const main = h('div', { class: 'stack' });
+    const items = support ? support.visitChecklist.items : FALLBACK_ITEMS;
+    const list = h('div', { class: 'items', id: 'checklist-items' });
+    for (const item of items) {
+      list.append(h('div', { class: 'item-row' }, svgNode(itemSvg(itemKind(item), item)),
+        h('span', { class: 'item-name' }, item)));
+    }
+    main.append(list);
+    if (support) {
+      main.append(h('details', { class: 'more' }, h('summary', {}, '자세히'),
+        row('출처', support.visitChecklist.source)));
+    }
+    const footer = wizardFooter();
+    if (footer) main.append(footer);
+    return main;
+  }
+
+  /** Small text button at the bottom of a wizard screen: back one screen, or back to confirm. */
+  function wizardFooter() {
+    if (state.prepStep === 'hospital' && !state.editing) return null;
+    const label = state.editing ? '확인 화면으로 돌아가기'
+      : (state.prepStep === 'checklist' ? '확인 화면으로' : '이전 질문으로');
+    return h('div', { class: 'bottom-links' },
+      h('button', { class: 'btn small ghost', id: 'btn-wizard-back', onclick: () => {
+        dispatch({ type: 'WIZARD_BACK' });
+        sayStep();
+      } }, label));
+  }
+
+  function renderPrepare() {
+    if (state.prepStep === 'confirm') return renderConfirm();
+    if (state.prepStep === 'checklist') return renderChecklist();
+    return renderQuestion(state.prepStep);
+  }
+
+  function companionCard() {
+    const s = support;
+    return h('div', { class: 'overlay-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${s.city} 동행 신청` },
+      h('h2', {}, `${s.city} 동행 신청`),
+      h('p', {}, '혼자 사시거나 사실상 혼자 지내시는 분(노인가구, 한부모가정 등)은 병원 동행을 신청할 수 있어요.'),
+      h('a', { class: 'btn wide link', href: s.onlineUrl, target: '_blank', rel: 'noopener noreferrer' },
+        '성남시 동행 신청 열기'),
+      h('details', { class: 'more' }, h('summary', {}, '자세히'),
+        row('사업', s.program),
+        row('대상', s.target),
+        row('이용 요금', s.fee),
+        row('운영 시간', s.hours),
+        row('문의', `${s.contact.name} ${s.contact.phone}`),
+        row('출처', `${s.source.name} ${s.source.url}`),
+        row('확인한 날', s.retrieved)),
+      h('button', { class: 'btn wide primary', id: 'btn-companion-close',
+        onclick: () => dispatch({ type: 'CLOSE_COMPANION' }) }, '닫기'));
+  }
+
   function pointDetails(p) {
-    const d = h('details', {}, h('summary', {}, '자세히'));
-    const frag = [];
+    const d = h('details', { class: 'more' }, h('summary', {}, '자세히'));
     if (p.sign) d.append(row('찾을 표지판', p.sign));
     if (p.detail) {
       d.append(
@@ -308,9 +475,12 @@ function boot(route, support) {
       );
     }
     d.append(row('상태', p.checkedOn ? `${p.status} (${p.checkedOn})` : p.status), row('출처', p.source));
-    if (p.gap) frag.push(h('p', { class: 'warn', id: 'gap-warning', role: 'note' }, '이 구간은 끊어진 곳이 있어요. 우회하거나 직원에게 물어보세요.'));
-    frag.push(d);
-    return h('div', { class: 'stack' }, frag);
+    if (p.id === route.points[route.points.length - 1].id) {
+      const ol = h('ol', { class: 'summary', id: 'arrival-summary' });
+      route.points.filter((q) => q.stage === 'indoor').forEach((q) => ol.append(h('li', {}, q.display)));
+      d.append(h('p', { class: 'setting-title' }, '병원 안 순서'), ol);
+    }
+    return d;
   }
 
   // ------------------------------------------------------------ arrow and simulation
@@ -412,7 +582,7 @@ function boot(route, support) {
   const listener = createListener({
     onStart: () => { listening = true; chime(settings, 'start'); render(); },
     onEnd: () => { listening = false; chime(settings, 'end'); render(); },
-    onResult: (text) => { if (state.index < 0) interpret(text); },
+    onResult: (text) => { if (state.index < 0 && QUESTION_STEPS.includes(state.prepStep)) interpret(text); },
     onDenied: () => { listenMsg = '마이크 사용이 허용되지 않았어요. 직접 입력해 주세요.'; typedOpen = true; render(); },
     onUnsupported: () => { listenMsg = '이 기기에서는 말하기를 쓸 수 없어요. 직접 입력해 주세요.'; typedOpen = true; render(); },
     onError: () => { listenMsg = '음성 인식에 문제가 있어요. 다시 해 보거나 직접 입력해 주세요.'; typedOpen = true; render(); },
@@ -442,53 +612,62 @@ function boot(route, support) {
     parsing = false;
     badge = result.source === 'ai' ? 'AI 해석' : '규칙 해석';
     reAsk = result.reAsk;
-    dispatch({ type: 'SET_FIELDS', fields: result.fields });
+    typedText = '';
+    typedOpen = false;
+    dispatch({ type: 'SET_FIELDS', fields: result.fields }, { keepHeard: true });
     if (reAsk) say(reAsk === REASK_HOSPITAL_SPEECH ? 'reask-hospital' : 'reask', reAsk);
-    else say('prep-confirm', CLIP_TEXT['prep-confirm']);
+    else sayStep();
+  }
+
+  /** The picture box: a pictogram by point kind, or the big arrow when one can be drawn. */
+  function pictureBox(p) {
+    const spec = pictoSpec(p);
+    const box = h('div', { class: 'picto-box', id: 'arrow-box' });
+    const info = arrowInfo();
+    if (info) {
+      const holder = h('div', { class: 'arrow-holder', id: 'arrow-holder' });
+      box.classList.add('arrow-mode');
+      box.append(holder);
+      mountArrow(holder, info.angle);
+      if (spec.label) box.append(h('p', { class: 'picto-caption' }, spec.label));
+    } else {
+      box.append(svgNode(pictoSvg(spec)));
+    }
+    return box;
   }
 
   function renderPoint(p) {
     const main = h('div', { class: 'stack' });
+    const arrivedHere = state.arrived && state.index === route.points.length - 1;
 
-    if (p.stage === 'travel') {
-      const box = h('div', { class: 'arrow-box', id: 'arrow-box' });
-      if (p.busNumber) {
-        box.append(h('div', { class: 'bus-plate', role: 'img', 'aria-label': `버스 ${p.busNumber}번` }, p.busNumber));
-      }
-      const info = arrowInfo();
-      if (info) {
-        const holder = h('div', { class: 'arrow-holder', id: 'arrow-holder' });
-        box.append(holder);
-        mountArrow(holder, info.angle);
-      } else {
-        box.append(h('div', { class: 'sign-panel' }, SIGN_FALLBACK));
-      }
-      if (arrowCouldDraw() && heading === null) {
-        box.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onCompass }, '방향 센서 켜기'));
-      }
-      if (compassMsg && !settings.sim) box.append(h('p', { class: 'muted', role: 'status' }, compassMsg));
-      main.append(box);
+    if (arrivedHere) {
+      main.append(h('div', { class: 'picto-box done', id: 'arrow-box' }, svgNode(doneSvg())));
     } else {
-      main.append(h('div', { class: 'arrow-box' }, h('div', { class: 'sign-panel' }, SIGN_FALLBACK)));
+      main.append(pictureBox(p));
+      if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, SIGN_FALLBACK));
+      if (arrowCouldDraw() && heading === null) {
+        main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onCompass }, '방향 센서 켜기'));
+      }
+      if (compassMsg && !settings.sim) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
+      if (p.gap) main.append(h('p', { class: 'warn', id: 'gap-warning', role: 'note' }, '이 구간은 끊어진 곳이 있어요. 우회하거나 직원에게 물어보세요.'));
     }
-    if (settings.sim) main.append(simPanel(p));
+    if (settings.sim && !arrivedHere) main.append(simPanel(p));
 
-    if (p.id === route.points[route.points.length - 1].id) {
-      const summary = h('div', { class: 'card', id: 'arrival-summary' },
-        h('h2', {}, state.arrived ? '안내를 모두 마쳤어요' : '병원 안 순서'));
-      const ol = h('ol', { class: 'summary' });
-      route.points.filter((q) => q.stage === 'indoor').forEach((q) => ol.append(h('li', {}, q.display)));
-      summary.append(ol);
-      main.append(summary);
-    }
-
-    main.append(pointDetails(p));
-
+    const links = h('div', { class: 'bottom-links' }, pointDetails(p));
     const prevLabel = p.stage === 'indoor' ? '이전 지점으로 돌아가기' : (state.index === 0 ? '처음 화면으로' : '이전 지점으로');
-    main.append(h('button', { class: 'btn wide ghost', id: 'btn-prev', onclick: () => {
-      dispatch({ type: 'PREV' });
-      if (state.index >= 0) sayCurrent();
-    } }, prevLabel));
+    const row2 = h('div', { class: 'link-row' },
+      h('button', { class: 'btn small ghost', id: 'btn-prev', onclick: () => {
+        dispatch({ type: 'PREV' });
+        sayCurrent();
+      } }, prevLabel));
+    if (arrivedHere) {
+      row2.append(h('button', { class: 'btn small ghost', id: 'btn-restart', onclick: () => {
+        dispatch({ type: 'RESTART' });
+        sayCurrent();
+      } }, '처음 화면으로'));
+    }
+    links.append(row2);
+    main.append(links);
     return main;
   }
 
@@ -506,23 +685,6 @@ function boot(route, support) {
     return card;
   }
 
-  function buildChooser() {
-    const f = FIELDS.find((x) => x.id === state.chooser);
-    const card = h('div', { class: 'overlay-card small', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${f.label} 고르기` },
-      h('h2', {}, `${f.label} 고르기`));
-    for (const o of f.options) {
-      card.append(h('button', { class: 'btn wide', onclick: () => {
-        dispatch({ type: 'SET_FIELD', field: f.id, value: o.value });
-        speakThen(say(o.clipId, o.phrase), () => say('prep-confirm', CLIP_TEXT['prep-confirm']));
-      } }, o.label));
-    }
-    card.append(
-      h('button', { class: 'btn wide ghost', onclick: () => dispatch({ type: 'SET_FIELD', field: f.id, value: null }) }, '모르겠어요'),
-      h('button', { class: 'btn wide ghost', onclick: () => dispatch({ type: 'CLOSE_CHOOSER' }) }, '닫기'),
-    );
-    return card;
-  }
-
   /** Builds an overlay once when it opens and clears it when it closes; never rebuilt while open. */
   function syncOverlay(el, isOpen, build) {
     el.hidden = !isOpen;
@@ -535,10 +697,10 @@ function boot(route, support) {
 
   function renderOverlays() {
     syncOverlay($('overlay-help'), state.helpOpen, buildHelp);
-    syncOverlay($('overlay-chooser'), Boolean(state.chooser), buildChooser);
+    syncOverlay($('overlay-companion'), state.companionOpen && Boolean(support), companionCard);
     syncOverlay($('overlay-settings'), state.settingsOpen, settingsCard);
 
-    const open = state.helpOpen || Boolean(state.chooser) || state.settingsOpen;
+    const open = state.helpOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
     document.body.classList.toggle('modal-open', open);
     setBackgroundInert(open);
     if (open && !wasOverlay) {
@@ -589,15 +751,25 @@ function boot(route, support) {
 
   // ------------------------------------------------------------ frame
 
+  function renderDots(cur, total) {
+    const dots = $('dots');
+    dots.replaceChildren(...Array.from({ length: total }, (_, i) =>
+      h('span', { class: i + 1 < cur ? 'dot done' : (i + 1 === cur ? 'dot current' : 'dot') })));
+  }
+
   function render() {
     const screen = screenOf(state, route);
     const p = currentPoint();
     document.documentElement.dataset.screen = screen;
     document.documentElement.classList.toggle('large', settings.largeText);
 
+    const prog = progressOf(state, route);
     $('stage-pill').textContent = STAGE_LABEL[screen];
-    $('progress').textContent = p ? `${route.points.length}단계 중 ${p.order}단계` : '';
-    setInstruction(p ? p.display : CLIP_TEXT['prep-prompt']);
+    $('progress').textContent = `${prog.cur} / ${prog.total}`;
+    $('progress').setAttribute('aria-label', `${prog.total}단계 중 ${prog.cur}단계`);
+    renderDots(prog.cur, prog.total);
+    if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
+    else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
 
     disposeArrow3d();
     arrowCtl = null;
@@ -606,16 +778,15 @@ function boot(route, support) {
       settings.sim ? h('div', { class: 'sim-banner', role: 'status' }, BANNER_TEXT) : null,
       p ? renderPoint(p) : renderPrepare(),
     ].filter(Boolean));
-    if (!state.helpOpen && !state.chooser && !state.settingsOpen) $('main').scrollTop = 0;
+    if (!state.helpOpen && !state.companionOpen && !state.settingsOpen) $('main').scrollTop = 0;
 
+    // The primary button keeps its place on every screen; when it has nothing to do it is only hidden.
     const primary = $('btn-primary');
-    if (!p) {
-      primary.textContent = '길 안내 시작';
-    } else if (state.arrived) {
-      primary.textContent = '처음 화면으로';
-    } else {
-      primary.textContent = p.confirmLabel || '여기에 도착했어요';
-    }
+    const bp = barPrimary(state, route);
+    primary.textContent = bp.label;
+    primary.classList.toggle('vacant', !bp.visible);
+    primary.disabled = !bp.visible;
+    primary.setAttribute('aria-hidden', bp.visible ? 'false' : 'true');
     renderOverlays();
   }
 
@@ -635,13 +806,19 @@ function boot(route, support) {
     dispatch({ type: 'OPEN_SETTINGS' });
   };
   $('btn-primary').onclick = () => {
-    const p = currentPoint();
-    if (!p) {
+    const { action } = barPrimary(state, route);
+    if (action === 'next') {
+      dispatch({ type: 'WIZARD_NEXT' });
+      sayStep();
+    } else if (action === 'start') {
+      chime(settings);
       dispatch({ type: 'START' });
       sayCurrent();
-    } else if (state.arrived) {
-      dispatch({ type: 'RESTART' });
-    } else {
+    } else if (action === 'show') {
+      openerSel = '#btn-primary';
+      dispatch({ type: 'OPEN_HELP' });
+      say('help-main', HELP_SPEECH);
+    } else if (action === 'confirm') {
       chime(settings);
       vibrate(80);
       dispatch({ type: 'CONFIRM' });
@@ -651,7 +828,7 @@ function boot(route, support) {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (state.helpOpen) dispatch({ type: 'CLOSE_HELP' });
-    else if (state.chooser) dispatch({ type: 'CLOSE_CHOOSER' });
+    else if (state.companionOpen) dispatch({ type: 'CLOSE_COMPANION' });
     else if (state.settingsOpen) dispatch({ type: 'CLOSE_SETTINGS' });
   });
 

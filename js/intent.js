@@ -128,25 +128,31 @@ export function parseByRules(text) {
   return { ...fields, reAsk: fields.hospital ? null : HOSPITAL_REASK };
 }
 
+// Models sometimes write JSON null as the text "null"; treat that and an empty string as null.
+const asNull = (v) => (v === null || (typeof v === 'string' && /^\s*(null)?\s*$/i.test(v)) ? null : v);
+
 /**
- * Validates a webhook reply against the contract. All five keys must be present: hospital, visit,
- * mobility and reception are a known value or null, reAsk is a string or null. Anything else is
- * invalid (null is returned and the caller uses the rules). The model's free text in `reAsk` is
- * never shown or spoken; the only question is the fixed HOSPITAL_REASK when the hospital is null.
+ * Validates a webhook reply against the contract. The four field keys must be present: hospital,
+ * visit, mobility and reception are a known value or null. `reAsk` is optional and, if present,
+ * must be a string or null; its text is never shown or spoken (the only question is the fixed
+ * HOSPITAL_REASK when the hospital is null). Anything else is invalid (null is returned and the
+ * caller uses the rules). Measured on 2026-11-19: gpt-4o-mini often omits reAsk and sometimes
+ * writes "null" as text (docs/*-ai-eval.md), which used to reject otherwise correct replies.
  */
 export function validateAiReply(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-  for (const k of ['hospital', 'visit', 'mobility', 'reception', 'reAsk']) {
+  for (const k of ['hospital', 'visit', 'mobility', 'reception']) {
     if (!Object.prototype.hasOwnProperty.call(obj, k)) return null;
   }
-  if (obj.reAsk !== null && typeof obj.reAsk !== 'string') return null;
+  if (obj.reAsk !== undefined && obj.reAsk !== null && typeof obj.reAsk !== 'string') return null;
   const out = EMPTY();
-  if (obj.hospital !== null) {
-    out.hospital = normalizeHospital(obj.hospital);
+  const hospital = asNull(obj.hospital);
+  if (hospital !== null) {
+    out.hospital = normalizeHospital(hospital);
     if (!out.hospital) return null;
   }
   for (const id of ['visit', 'mobility', 'reception']) {
-    const v = obj[id];
+    const v = asNull(obj[id]);
     if (v === null) continue;
     if (typeof v !== 'string' || !optionFor(id, v)) return null;
     out[id] = v;

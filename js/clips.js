@@ -56,7 +56,36 @@ export const FIXED_CLIPS = [
   { clipId: 'reask-hospital', text: REASK_HOSPITAL_SPEECH },
   { clipId: 'arrive-main', text: '안내를 모두 마쳤습니다. 수고 많으셨어요.' },
   { clipId: 'ui-resume', text: '지난번에 멈춘 곳부터 이어서 안내해 드릴게요.' },
+  // Large-screen easy mode: one clip per question screen and per action screen.
+  { clipId: 'q-hospital', text: '어느 병원에 가세요?' },
+  { clipId: 'q-visit', text: '처음 가세요?' },
+  { clipId: 'q-mobility', text: '보행기나 휠체어를 쓰세요?' },
+  { clipId: 'q-reception', text: '접수할 때 도움이 필요하세요?' },
+  { clipId: 'confirm-all', text: '이렇게 가시는 게 맞으면, 길 안내 시작을 눌러 주세요.' },
+  { clipId: 'checklist-screen', text: '신분증과 진료의뢰서를 챙기셨으면, 챙겼어요를 눌러 주세요.' },
+  { clipId: 'arrive-show', text: '직원에게 이 화면을 보여 주세요.' },
 ];
+
+/** Wording and leading symbol of each answer button on the question screens, by field and value. */
+export const ANSWER_BUTTONS = {
+  hospital: { '분당서울대병원': { sym: '→', label: '분당서울대병원' } },
+  visit: {
+    first: { sym: '○', label: '네, 처음이에요' },
+    return: { sym: '×', label: '아니요, 가 봤어요' },
+  },
+  mobility: {
+    walker: { sym: '→', label: '보행기' },
+    wheelchair: { sym: '→', label: '휠체어' },
+    none: { sym: '×', label: '안 써요' },
+  },
+  reception: {
+    need: { sym: '○', label: '네, 필요해요' },
+    no: { sym: '×', label: '아니요' },
+  },
+};
+
+/** Question screens in order; each field has one question clip (clipId `q-<field>`). */
+export const QUESTION_STEPS = FIELDS.map((f) => f.id);
 
 export function optionFor(fieldId, value) {
   const field = FIELDS.find((f) => f.id === fieldId);
