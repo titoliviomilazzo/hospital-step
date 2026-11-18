@@ -1,0 +1,20 @@
+{
+  "id": "seongnam-hospital-companion",
+  "program": "1인가구 병원 안심동행",
+  "city": "성남시",
+  "retrieved": "2026-11-19",
+  "target": "노인가구, 한부모가정 등 사실상 1인가구 (연령, 소득 무관)",
+  "operatingCities": ["성남시"],
+  "fee": "관내 거주자 5,000원/3시간, 30분 초과 시 2,500원",
+  "hours": "평일 오전 9시~오후 6시",
+  "contact": { "name": "성남시 1인가구 힐링스페이스", "phone": "031-729-1760" },
+  "onlineUrl": "https://gg24.gg.go.kr",
+  "source": {
+    "name": "경기도 1인가구 병원 안심동행",
+    "url": "https://www.gg.go.kr/contents/contents.do?ciIdx=987005&menuId=265914"
+  },
+  "visitChecklist": {
+    "source": "snubh.org 외래진료안내",
+    "items": ["신분증", "진료의뢰서(요양급여의뢰서)"]
+  }
+}

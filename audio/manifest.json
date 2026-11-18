@@ -1,0 +1,188 @@
+{
+  "model": "eleven_multilingual_v2",
+  "speed": 0.9,
+  "clips": {
+    "O1": {
+      "text": "미금역 삼번 출구로 나가세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "O1-detail": {
+      "text": "엘리베이터는 역 안의 안내 표지판을 보고 찾으세요. 잘 모르시겠으면 역 직원에게 물어보세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "O2": {
+      "text": "미금역 삼번 출구 마을버스 정류장에서 칠 다시 일번 버스를 타세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "O2-detail": {
+      "text": "칠번 마을버스를 타셔도 병원에 갑니다.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "O3": {
+      "text": "서울대병원 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "O4": {
+      "text": "병원 일동 출입구로 가세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "O4-detail": {
+      "text": "정류장에서 일동까지는 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I1": {
+      "text": "일동 일층에서 처음 오신 창구 표지판을 찾으세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I1-detail": {
+      "text": "로비에 있는 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 처음 오신 창구가 어디인지 물어보세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I2": {
+      "text": "처음 오신 창구에 진료의뢰서를 내세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I3": {
+      "text": "그다음에는 진료받으실 과의 간호사 스테이션에 가서 접수하세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "prep-prompt": {
+      "text": "화면에 적힌 내용이 맞는지 보시고, 맞으면 길 안내 시작을 눌러 주세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "prep-checklist": {
+      "text": "집을 나서기 전에 신분증과 진료의뢰서를 꼭 챙기세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "prep-confirm": {
+      "text": "이 내용이 맞으세요?",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-main": {
+      "text": "저는 분당서울대병원에 처음 왔습니다. 일동 일층 처음 오신 창구가 어디인지 알려 주세요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "arrive-main": {
+      "text": "안내를 모두 마쳤습니다. 수고 많으셨어요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "ui-resume": {
+      "text": "지난번에 멈춘 곳부터 이어서 안내해 드릴게요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-hospital-snubh": {
+      "text": "분당서울대병원에 가시는군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-visit-first": {
+      "text": "처음 가시는군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-visit-return": {
+      "text": "전에도 가 보셨군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-mobility-walker": {
+      "text": "보행기를 쓰시는군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-mobility-wheelchair": {
+      "text": "휠체어를 타시는군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-mobility-none": {
+      "text": "걸어 다니시는 데 도움은 필요 없으시군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-reception-need": {
+      "text": "접수할 때 도움이 필요하시군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "field-reception-no": {
+      "text": "접수는 혼자 하실 수 있으시군요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "reask-hospital": {
+      "text": "어느 병원에 가세요? 지금은 분당서울대병원 가는 길만 안내해 드릴 수 있어요.",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    }
+  }
+}

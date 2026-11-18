@@ -1,0 +1,157 @@
+{
+  "id": "migeum-snubh-first-visit",
+  "title": "미금역에서 분당서울대병원 1동 1층 처음오신 창구까지",
+  "retrieved": "2026-11-19",
+  "points": [
+    {
+      "id": "O1",
+      "stage": "travel",
+      "order": 1,
+      "display": "미금역 3번 출구로 나가세요.",
+      "speech": "미금역 삼번 출구로 나가세요.",
+      "detail": "엘리베이터는 역 안의 안내 표지판을 보고 찾으세요. 잘 모르시겠으면 역 직원에게 물어보세요.",
+      "sign": null,
+      "confirmLabel": "3번 출구로 나왔어요",
+      "kind": "walk",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 10,
+        "y": 80
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "snubh.org 찾아오시는길: 미금역 3번 출구, 마을버스(7번, 7-1번)",
+      "gap": false
+    },
+    {
+      "id": "O2",
+      "stage": "travel",
+      "order": 2,
+      "display": "미금역3번출구(마을) 정류장에서 마을버스 7-1번을 타세요.",
+      "speech": "미금역 삼번 출구 마을버스 정류장에서 칠 다시 일번 버스를 타세요.",
+      "detail": "7번 마을버스를 타셔도 병원에 갑니다.",
+      "sign": null,
+      "confirmLabel": "버스를 탔어요",
+      "kind": "bus",
+      "busNumber": "7-1",
+      "coord": null,
+      "sim": {
+        "x": 25,
+        "y": 65
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "snubh.org 찾아오시는길; 정류장 이름은 경기버스정보 (제안서 README 기록)",
+      "gap": false,
+      "detailSpeech": "칠번 마을버스를 타셔도 병원에 갑니다."
+    },
+    {
+      "id": "O3",
+      "stage": "travel",
+      "order": 3,
+      "display": "서울대병원 정류장에서 내리세요.",
+      "speech": "서울대병원 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.",
+      "detail": "",
+      "sign": null,
+      "confirmLabel": "버스에서 내렸어요",
+      "kind": "bus",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 60,
+        "y": 40
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "경기버스정보 (제안서 README 기록)",
+      "gap": false
+    },
+    {
+      "id": "O4",
+      "stage": "travel",
+      "order": 4,
+      "display": "병원 1동 출입구로 가세요.",
+      "speech": "병원 일동 출입구로 가세요.",
+      "detail": "정류장에서 1동까지는 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요.",
+      "sign": null,
+      "confirmLabel": "1동 출입구에 도착했어요",
+      "kind": "walk",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 75,
+        "y": 30
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "snubh.org 외래진료안내: 처음오신 창구는 1동 1층",
+      "gap": false,
+      "detailSpeech": "정류장에서 일동까지는 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요."
+    },
+    {
+      "id": "I1",
+      "stage": "indoor",
+      "order": 5,
+      "display": "1동 1층에서 처음오신 창구 표지판을 찾으세요.",
+      "speech": "일동 일층에서 처음 오신 창구 표지판을 찾으세요.",
+      "detail": "로비에 있는 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 처음오신 창구가 어디인지 물어보세요.",
+      "sign": "처음오신 창구",
+      "confirmLabel": "창구를 찾았어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 85,
+        "y": 20
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "snubh.org 외래진료안내",
+      "gap": false,
+      "detailSpeech": "로비에 있는 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 처음 오신 창구가 어디인지 물어보세요."
+    },
+    {
+      "id": "I2",
+      "stage": "indoor",
+      "order": 6,
+      "display": "처음오신 창구에 진료의뢰서를 내세요.",
+      "speech": "처음 오신 창구에 진료의뢰서를 내세요.",
+      "detail": "",
+      "sign": "처음오신 창구",
+      "confirmLabel": "서류를 냈어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 85,
+        "y": 20
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "snubh.org 외래진료안내 3단계",
+      "gap": false
+    },
+    {
+      "id": "I3",
+      "stage": "indoor",
+      "order": 7,
+      "display": "그다음 진료받을 과의 간호사 스테이션에서 접수하세요.",
+      "speech": "그다음에는 진료받으실 과의 간호사 스테이션에 가서 접수하세요.",
+      "detail": "",
+      "sign": null,
+      "confirmLabel": "안내를 확인했어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 90,
+        "y": 12
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "snubh.org 외래진료안내 4단계",
+      "gap": false
+    }
+  ]
+}
