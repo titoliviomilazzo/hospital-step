@@ -178,6 +178,132 @@ export function itemKind(text) {
   return String(text).includes('신분증') ? 'idcard' : 'document';
 }
 
+// ---------------------------------------------------------------- hero illustrations
+// Flat pictograms for the question screens and the mobility buttons. Each is a square 200x200
+// drawing with its own Korean aria-label; strokes use INK, fills use SOFT or white (same tokens as
+// the pictures above). They show no text, so they add no facts.
+
+const HERO_LABELS = {
+  walker: '보행기를 쓰는 사람 그림',
+  wheelchair: '휠체어를 탄 사람 그림',
+  walking: '걸어 다니는 사람 그림',
+  hospital: '병원 건물 그림',
+  'first-visit': '처음 방문하는 사람 그림',
+  reception: '접수 창구에서 직원이 돕는 그림',
+};
+
+export const HERO_KINDS = Object.keys(HERO_LABELS);
+
+function heroFrame(inner, kind, cls) {
+  return `<svg class="${cls}" viewBox="0 0 200 200" role="img" aria-label="${escapeXml(HERO_LABELS[kind])}" `
+    + `xmlns="http://www.w3.org/2000/svg" focusable="false">${inner}</svg>`;
+}
+
+const head = (cx, cy, r = 16) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" ${stroke(6)}/>`;
+const line = (x1, y1, x2, y2, w = 8) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${stroke(w)}/>`;
+const poly = (pts, w = 8) => `<polyline points="${pts}" fill="none" ${stroke(w)}/>`;
+const ground = `<line x1="14" y1="192" x2="186" y2="192" ${stroke(5)}/>`;
+
+function drawWalker() {
+  return ground
+    // person, leaning slightly toward the walker
+    + head(80, 40)
+    + line(82, 60, 76, 112, 12)
+    + poly('76,112 84,150 80,186', 10) + poly('76,112 64,150 56,186', 10)
+    + line(80, 186, 96, 186, 8) + line(56, 186, 42, 186, 8)
+    + poly('82,72 112,92 132,98', 9)
+    // walker frame with two wheels
+    + line(128, 98, 168, 98, 9) + line(130, 98, 130, 176, 8) + line(166, 98, 166, 176, 8)
+    + line(130, 140, 166, 140, 6)
+    + `<circle cx="130" cy="182" r="9" fill="${SOFT}" ${stroke(5)}/>`
+    + `<circle cx="166" cy="182" r="9" fill="${SOFT}" ${stroke(5)}/>`;
+}
+
+function drawWheelchair() {
+  return ground
+    + head(92, 36)
+    + line(92, 54, 88, 108, 12)
+    + poly('88,108 134,110 146,152', 10) + line(146,152, 164,152, 8)
+    + poly('92,70 116,92 126,94', 8)
+    // chair: backrest with push handle, seat, footrest rod
+    + poly('58,56 66,56 66,114', 7) + line(66, 114, 142, 114, 7) + line(142, 114, 154, 150, 6)
+    // big wheel and small front wheel
+    + `<circle cx="92" cy="146" r="40" fill="none" ${stroke(8)}/>`
+    + `<circle cx="92" cy="146" r="6" fill="${INK}"/>`
+    + `<circle cx="166" cy="180" r="11" fill="${SOFT}" ${stroke(5)}/>`;
+}
+
+function drawWalking() {
+  return ground
+    + head(100, 34)
+    + line(100, 54, 100, 112, 12)
+    + poly('100,112 120,150 118,186', 10) + line(118, 186, 134, 186, 8)
+    + poly('100,112 84,150 64,180', 10) + line(64, 180, 50, 178, 8)
+    + poly('100,68 78,92 70,112', 9) + poly('100,68 124,90 132,108', 9);
+}
+
+function drawHospital() {
+  const win = (x, y) => `<rect x="${x}" y="${y}" width="20" height="20" fill="#fff" ${stroke(4)}/>`;
+  return ground
+    + `<rect x="36" y="56" width="128" height="136" fill="${SOFT}" ${stroke(7)}/>`
+    + [60, 92, 124].flatMap((x) => [74, 112].map((y) => win(x + 0, y))).join('')
+    + `<rect x="84" y="150" width="32" height="42" fill="#fff" ${stroke(5)}/>`
+    // plus sign on the roof
+    + `<rect x="78" y="14" width="44" height="40" rx="6" fill="#fff" ${stroke(6)}/>`
+    + line(100, 20, 100, 48, 9) + line(86, 34, 114, 34, 9);
+}
+
+function drawFirstVisit() {
+  return ground
+    + head(78, 70, 20)
+    + `<path d="M40 192 C 40 128 116 128 116 192 Z" fill="${SOFT}" ${stroke(7)}/>`
+    // question bubble
+    + `<path d="M104 28 H176 Q188 28 188 40 V84 Q188 96 176 96 H138 L120 116 L124 96 H104 Q92 96 92 84 V40 Q92 28 104 28 Z" fill="#fff" ${stroke(6)}/>`
+    + `<text x="140" y="82" text-anchor="middle" font-weight="900" font-size="56" fill="${INK}">?</text>`;
+}
+
+function drawReception() {
+  return ground
+    // window frame and the staff member behind the counter
+    + `<rect x="24" y="22" width="152" height="118" rx="12" fill="#fff" ${stroke(7)}/>`
+    + head(100, 62, 18)
+    + `<path d="M62 140 C 62 96 138 96 138 140 Z" fill="${SOFT}" ${stroke(6)}/>`
+    // counter and a paper handed across
+    + `<rect x="14" y="140" width="172" height="52" rx="6" fill="${SOFT}" ${stroke(7)}/>`
+    + `<rect x="120" y="124" width="40" height="26" fill="#fff" ${stroke(5)}/>`
+    + line(128, 134, 152, 134, 4) + line(128, 142, 146, 142, 4);
+}
+
+const HERO_DRAW = {
+  walker: drawWalker, wheelchair: drawWheelchair, walking: drawWalking,
+  hospital: drawHospital, 'first-visit': drawFirstVisit, reception: drawReception,
+};
+
+/** Inline SVG string of one illustration. `kind` is one of HERO_KINDS; `cls` is the CSS class. */
+export function heroSvg(kind, cls = 'hero-svg') {
+  const draw = HERO_DRAW[kind];
+  if (!draw) throw new Error(`unknown hero kind: ${kind}`);
+  return heroFrame(draw(), kind, cls);
+}
+
+export const walkerSvg = (cls) => heroSvg('walker', cls);
+export const wheelchairSvg = (cls) => heroSvg('wheelchair', cls);
+export const walkingSvg = (cls) => heroSvg('walking', cls);
+export const hospitalSvg = (cls) => heroSvg('hospital', cls);
+export const firstVisitSvg = (cls) => heroSvg('first-visit', cls);
+export const receptionSvg = (cls) => heroSvg('reception', cls);
+
+/** Hero illustrations shown above the choices of each question step, in display order. */
+export const HERO_BY_STEP = {
+  hospital: ['hospital'],
+  visit: ['first-visit'],
+  mobility: ['walker', 'wheelchair'],
+  reception: ['reception'],
+};
+
+/** Small icon at the left of each mobility answer button, by answer value. */
+export const MOBILITY_ICON = { walker: 'walker', wheelchair: 'wheelchair', none: 'walking' };
+
 /** Browser only: turns one of the SVG strings above into an element. */
 export function svgNode(svg) {
   const holder = document.createElement('div');

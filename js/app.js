@@ -5,12 +5,13 @@ import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_SE
 import { loadState, saveState } from './storage.js';
 import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking } from './voice.js';
 import { createListener } from './listen.js';
-import { parseVisit } from './intent.js';
+import { parseVisit, expandAbbreviations } from './intent.js';
 import { arrowAngle, bearingDeg, startCompass } from './compass.js';
 import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
-import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode } from './pictos.js';
+import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
+import { startAlightWatch, simulatedSource } from './alight.js';
 import { WEBHOOK_URL } from '../config.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
@@ -23,7 +24,16 @@ const STEP_CLIP = {
 };
 // On-screen sentence of the two wizard screens whose spoken clip is too long for three lines of 36px.
 const STEP_SCREEN_TEXT = { confirm: '이렇게 가시는 게 맞나요?', checklist: '신분증과 진료의뢰서를 챙기세요.' };
+const BUS_NOTE = '버스 안 안내 방송과 화면에 나오는 정류장 이름을 확인하세요. 잘 모르시겠으면 기사님께 물어보세요.';
 const ARRIVED_TEXT = '안내를 모두 마쳤습니다.';
+// Get-off alert texts (the spoken versions are the alert-* clips in clips.js).
+const ALERT_BUTTON = '내릴 곳 가까워지면 알려 주기';
+const ALERT_EXPLAIN = '위치 확인을 허락하시면 내리실 정류장에 가까워질 때 소리와 진동으로 알려 드려요.';
+const ALERT_SIM_NOTE = '시뮬레이션: 버스가 움직이는 것처럼 보여 드려요';
+const ALERT_WAITING = '알림 켜짐: 내리실 정류장을 기다리는 중';
+const ALERT_BANNER = { near: '곧 내리실 정류장입니다. 하차 벨을 눌러 주세요.', now: '이번 정류장에서 내리세요.' };
+const ALERT_OFF_TEXT = '위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.';
+const ALERT_VIBRATION = [400, 200, 400];
 // Items shown on the "what to bring" screen when data/support.json is missing.
 const FALLBACK_ITEMS = ['신분증', '진료의뢰서'];
 // Screen 1 is a wizard: one question per screen, then confirm, then the checklist.
@@ -268,6 +278,12 @@ function boot(route, support) {
   let arrowToken = 0;
   const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // Get-off alert. Memory only; positions are never kept, only the resulting level.
+  let alightStop = null; // stop() of the running watch, or null
+  let alightPointId = null; // the route point the watch belongs to
+  let alightLevel = 'far'; // 'far' | 'near' | 'now'
+  let alightFailed = false; // permission denied or no position available
+
   const say = (clipId, text) => speak(clipId, text, settings);
   preloadManifest();
   const persist = () => saveState({ settings, lastPointId: state.lastPointId });
@@ -285,6 +301,8 @@ function boot(route, support) {
   function dispatch(action, { keepHeard = false } = {}) {
     const prev = state;
     state = nextState(state, action, route);
+    // The watch belongs to one screen: leaving it (confirm, back, reset) ends it.
+    if (alightPointId !== null && (currentPoint() === null || currentPoint().id !== alightPointId || state.arrived)) stopAlight();
     if (state.lastPointId !== prev.lastPointId) persist();
     if (prev.index < 0 && state.index >= 0) leavePrepare();
     else if (!keepHeard && prev.prepStep !== state.prepStep) {
@@ -301,6 +319,70 @@ function boot(route, support) {
     parsing = false;
     clearHeard();
     listener.stop();
+  }
+
+  function stopAlight() {
+    if (alightStop) alightStop();
+    alightStop = null;
+    alightPointId = null;
+    alightLevel = 'far';
+    alightFailed = false;
+  }
+
+  /** Taps [내릴 곳 가까워지면 알려 주기]: starts the watch; the browser asks for location itself. */
+  function startAlight(p) {
+    stopAlight();
+    alightPointId = p.id;
+    alightFailed = false;
+    const board = route.points.find((q) => q.boardCoord);
+    const source = settings.sim && board ? simulatedSource(board.boardCoord, p.alertCoord) : null;
+    say('alert-intro', CLIP_TEXT['alert-intro']);
+    const ctl = startAlightWatch({
+      target: p.alertCoord,
+      source,
+      onLevel: (level) => {
+        if (alightPointId !== p.id) return;
+        alightLevel = level;
+        const id = `alert-${level}`;
+        say(id, CLIP_TEXT[id]);
+        vibrate(ALERT_VIBRATION);
+        render();
+      },
+      onError: () => {
+        if (alightPointId !== p.id) return;
+        alightStop = null;
+        alightFailed = true;
+        say('alert-off', CLIP_TEXT['alert-off']);
+        render();
+      },
+    });
+    if (alightPointId === p.id && !alightFailed) alightStop = ctl.stop;
+    render();
+  }
+
+  /** The get-off alert controls and status for a point that has an alertCoord. */
+  function alightPanel(p) {
+    // Children go through h(), which skips null; a raw DOM append() would print "null" as text.
+    const kids = [];
+    if (alightStop && alightLevel !== 'far') {
+      kids.push(h('p', { class: `alight-banner ${alightLevel}`, id: 'alight-banner', role: 'alert' }, ALERT_BANNER[alightLevel]));
+    } else if (alightStop) {
+      kids.push(h('p', { class: 'alight-status', id: 'alight-status', role: 'status' }, ALERT_WAITING));
+    }
+    if (alightFailed) kids.push(h('p', { class: 'alight-banner off', id: 'alight-off', role: 'status' }, ALERT_OFF_TEXT));
+    if (alightStop) {
+      kids.push(h('button', { class: 'btn small ghost', id: 'btn-alight-off', onclick: () => {
+        stopAlight();
+        render();
+      } }, '알림 끄기'));
+    } else {
+      kids.push(
+        h('button', { class: 'btn secondary', id: 'btn-alight', onclick: () => startAlight(p) }, ALERT_BUTTON),
+        h('p', { class: 'note' }, ALERT_EXPLAIN),
+        settings.sim ? h('p', { class: 'muted', id: 'alight-sim-note' }, ALERT_SIM_NOTE) : null,
+      );
+    }
+    return h('div', { class: 'card alight', id: 'alight-panel' }, kids);
   }
 
   function currentPoint() {
@@ -323,24 +405,34 @@ function boot(route, support) {
   // ------------------------------------------------------------ screens
 
   /** A big full-width answer button: leading symbol, then the label. */
-  function answerButton(sym, label, attrs) {
+  function answerButton(sym, label, attrs, iconKind = null) {
     const { class: extra, ...rest } = attrs;
+    const lead = iconKind
+      ? h('span', { class: 'sym icon', 'aria-hidden': 'true' }, svgNode(heroSvg(iconKind, 'btn-icon')))
+      : h('span', { class: 'sym', 'aria-hidden': 'true' }, sym);
     return h('button', { type: 'button', ...rest, class: `btn answer${extra ? ` ${extra}` : ''}` },
-      h('span', { class: 'sym', 'aria-hidden': 'true' }, sym), h('span', { class: 'answer-text' }, label));
+      lead, h('span', { class: 'answer-text' }, label));
   }
 
   function heardCard() {
-    return h('div', { class: 'card', id: 'heard' },
-      h('p', { class: 'muted' }, '들은 말 (이 화면을 닫으면 사라져요)'),
-      h('p', { class: 'quote' }, utterance),
-      badge ? h('span', { class: 'badge', id: 'parse-badge' }, badge) : null,
+    // Display only: abbreviations the user said are written out in full; parsing used the raw text.
+    return h('div', { class: 'card heard', id: 'heard' },
+      h('div', { class: 'heard-head' },
+        h('p', { class: 'muted' }, '들은 말 (이 화면을 닫으면 사라져요)'),
+        badge ? h('span', { class: 'badge', id: 'parse-badge' }, badge) : null),
+      h('p', { class: 'quote' }, expandAbbreviations(utterance)),
       reAsk ? h('p', { class: 'reask', id: 'reask', role: 'status' }, reAsk) : null);
   }
 
   function renderQuestion(step) {
     const field = FIELDS.find((f) => f.id === step);
-    const main = h('div', { class: 'stack' });
+    const main = h('div', { class: utterance ? 'stack has-heard' : 'stack' });
     if (utterance) main.append(heardCard());
+
+    const heroKinds = HERO_BY_STEP[step] || [];
+    if (heroKinds.length) {
+      main.append(h('div', { class: `hero hero-${step}`, id: 'hero' }, heroKinds.map((k) => svgNode(heroSvg(k)))));
+    }
 
     const answers = h('div', { class: 'answers' });
     for (const o of field.options) {
@@ -354,7 +446,7 @@ function boot(route, support) {
           dispatch({ type: 'ANSWER', field: field.id, value: o.value });
           speakThen(say(o.clipId, o.phrase), () => sayStep());
         },
-      }));
+      }, field.id === 'mobility' ? MOBILITY_ICON[o.value] : null));
     }
     main.append(answers);
 
@@ -610,7 +702,7 @@ function boot(route, support) {
     const result = await parseVisit(t, { webhookUrl: WEBHOOK_URL });
     if (token !== parseToken || state.index >= 0) return;
     parsing = false;
-    badge = result.source === 'ai' ? 'AI 해석' : '규칙 해석';
+    badge = result.source === 'ai' ? '인공지능 해석' : '규칙 해석';
     reAsk = result.reAsk;
     typedText = '';
     typedOpen = false;
@@ -620,9 +712,9 @@ function boot(route, support) {
   }
 
   /** The picture box: a pictogram by point kind, or the big arrow when one can be drawn. */
-  function pictureBox(p) {
+  function pictureBox(p, compact = false) {
     const spec = pictoSpec(p);
-    const box = h('div', { class: 'picto-box', id: 'arrow-box' });
+    const box = h('div', { class: compact ? 'picto-box compact' : 'picto-box', id: 'arrow-box' });
     const info = arrowInfo();
     if (info) {
       const holder = h('div', { class: 'arrow-holder', id: 'arrow-holder' });
@@ -643,8 +735,10 @@ function boot(route, support) {
     if (arrivedHere) {
       main.append(h('div', { class: 'picto-box done', id: 'arrow-box' }, svgNode(doneSvg())));
     } else {
-      main.append(pictureBox(p));
-      if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, SIGN_FALLBACK));
+      // The get-off alert panel sits right under the instruction so its button never needs scrolling.
+      if (p.alertCoord) main.append(alightPanel(p));
+      main.append(pictureBox(p, Boolean(p.alertCoord)));
+      if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK));
       if (arrowCouldDraw() && heading === null) {
         main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onCompass }, '방향 센서 켜기'));
       }
@@ -716,6 +810,7 @@ function boot(route, support) {
 
   function settingsCard() {
     const update = (patch) => {
+      if ('sim' in patch && patch.sim !== settings.sim) stopAlight(); // a status from the other mode is stale
       settings = { ...settings, ...patch };
       persist();
       if (!settings.sound) stopSpeaking();
@@ -744,6 +839,7 @@ function boot(route, support) {
       toggle('largeText', '큰 글씨'),
       toggle('sim', '시뮬레이션', '(모식도로 화살표를 연습해 봐요)'),
       h('p', { class: 'muted' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요.'),
+      h('p', { class: 'muted' }, '내릴 곳 알림을 켜면 휴대폰 위치를 쓰지만, 위치는 저장하거나 보내지 않아요.'),
       h('p', { class: 'muted' }, '말하기 기능을 쓰면 휴대폰 브라우저가 음성을 인식하려고 소리를 인터넷으로 보낼 수 있어요.'),
       h('button', { class: 'btn wide primary', onclick: () => dispatch({ type: 'CLOSE_SETTINGS' }) }, '닫기'),
     );

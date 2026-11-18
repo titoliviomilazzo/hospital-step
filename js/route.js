@@ -57,6 +57,14 @@ export function validateRoute(obj) {
         c.lat >= -90 && c.lat <= 90 && c.lon >= -180 && c.lon <= 180;
       if (!ok) errors.push(`${tag}.coord must be null or {lat, lon}`);
     }
+    for (const key of ['alertCoord', 'boardCoord']) {
+      if (p[key] === undefined) continue;
+      const c = p[key];
+      const ok = c && typeof c === 'object' && isFiniteNumber(c.lat) && isFiniteNumber(c.lon) &&
+        c.lat >= -90 && c.lat <= 90 && c.lon >= -180 && c.lon <= 180 &&
+        isNonEmptyString(c.source) && STATUSES.includes(c.status);
+      if (!ok) errors.push(`${tag}.${key} must be {lat, lon, source, status}`);
+    }
     if (!p.sim || !isFiniteNumber(p.sim.x) || !isFiniteNumber(p.sim.y)) {
       errors.push(`${tag}.sim must be {x, y} numbers`);
     }

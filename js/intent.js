@@ -19,6 +19,17 @@ export function normalizeHospital(v) {
   return null;
 }
 
+/**
+ * Display-only: writes the hospital's full name wherever the user said an abbreviation (분서대,
+ * 분당서울대 without 병원/학교, snubh). Parsing always uses the raw text, never this result.
+ */
+export function expandAbbreviations(text) {
+  return String(text ?? '')
+    .replace(/분서대(?:\s*병원)?/g, HOSPITAL_VALUE)
+    .replace(/snubh(?:\s*병원)?/gi, HOSPITAL_VALUE)
+    .replace(/분당\s*서울대(?!\s*(?:병원|학교))/g, HOSPITAL_VALUE);
+}
+
 function rulesHospital(t) {
   return /분당\s*서울대|분서대|snubh/i.test(t) ? HOSPITAL_VALUE : null;
 }

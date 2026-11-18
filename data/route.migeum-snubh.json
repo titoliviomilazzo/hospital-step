@@ -21,17 +21,17 @@
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "snubh.org 찾아오시는길: 미금역 3번 출구, 마을버스(7번, 7-1번)",
+      "source": "분당서울대병원 누리집(snubh.org) 찾아오시는길: 미금역 3번 출구, 마을버스(7번, 7-1번)",
       "gap": false
     },
     {
       "id": "O2",
       "stage": "travel",
       "order": 2,
-      "display": "미금역3번출구(마을) 정류장에서 마을버스 7-1번을 타세요.",
+      "display": "미금역 3번 출구 마을버스 정류장에서 마을버스 7-1번을 타세요.",
       "speech": "미금역 삼번 출구 마을버스 정류장에서 칠 다시 일번 버스를 타세요.",
       "detail": "7번 마을버스를 타셔도 병원에 갑니다.",
-      "sign": null,
+      "sign": "미금역3번출구(마을)",
       "confirmLabel": "버스를 탔어요",
       "kind": "bus",
       "busNumber": "7-1",
@@ -42,16 +42,22 @@
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "snubh.org 찾아오시는길; 정류장 이름은 경기버스정보 (제안서 README 기록)",
+      "source": "분당서울대병원 누리집(snubh.org) 찾아오시는길; 정류장 이름은 경기버스정보 (제안서 기록)",
       "gap": false,
-      "detailSpeech": "칠번 마을버스를 타셔도 병원에 갑니다."
+      "detailSpeech": "칠번 마을버스를 타셔도 병원에 갑니다.",
+      "boardCoord": {
+        "lat": 37.349855,
+        "lon": 127.110003,
+        "source": "OpenStreetMap node 13426868461 '미금역3번출구(마을)', retrieved 2026-11-19",
+        "status": "현장 미확인"
+      }
     },
     {
       "id": "O3",
       "stage": "travel",
       "order": 3,
-      "display": "서울대병원 정류장에서 내리세요.",
-      "speech": "서울대병원 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.",
+      "display": "서울대병원 정류장(분당서울대학교병원 앞)에서 내리세요.",
+      "speech": "서울대병원 정류장, 분당서울대학교병원 앞에서 내리세요. 서두르지 마시고 천천히 내리세요.",
       "detail": "",
       "sign": null,
       "confirmLabel": "버스에서 내렸어요",
@@ -64,8 +70,14 @@
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "경기버스정보 (제안서 README 기록)",
-      "gap": false
+      "source": "경기버스정보 (제안서 기록)",
+      "gap": false,
+      "alertCoord": {
+        "lat": 37.351452,
+        "lon": 127.12382,
+        "source": "OpenStreetMap node 13133065555 '서울대병원' bus_stop, retrieved 2026-11-19",
+        "status": "현장 미확인"
+      }
     },
     {
       "id": "O4",
@@ -85,7 +97,7 @@
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "snubh.org 외래진료안내: 처음오신 창구는 1동 1층",
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내: 처음오신 창구는 1동 1층",
       "gap": false,
       "detailSpeech": "정류장에서 일동까지는 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요."
     },
@@ -107,7 +119,7 @@
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "snubh.org 외래진료안내",
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내",
       "gap": false,
       "detailSpeech": "로비에 있는 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 처음 오신 창구가 어디인지 물어보세요."
     },
@@ -129,7 +141,7 @@
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "snubh.org 외래진료안내 3단계",
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 3단계",
       "gap": false
     },
     {
@@ -150,7 +162,7 @@
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "snubh.org 외래진료안내 4단계",
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 4단계",
       "gap": false
     }
   ]

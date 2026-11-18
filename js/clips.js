@@ -22,7 +22,7 @@ export const FIELDS = [
     id: 'visit', label: '방문',
     options: [
       { value: 'first', label: '처음 방문', clipId: 'field-visit-first', phrase: '처음 가시는군요.' },
-      { value: 'return', label: '재방문', clipId: 'field-visit-return', phrase: '전에도 가 보셨군요.' },
+      { value: 'return', label: '가 본 적 있음', clipId: 'field-visit-return', phrase: '전에도 가 보셨군요.' },
     ],
   },
   {
@@ -37,7 +37,7 @@ export const FIELDS = [
     ],
   },
   {
-    id: 'reception', label: '원내',
+    id: 'reception', label: '병원 안',
     options: [
       { value: 'need', label: '접수 도움 필요', clipId: 'field-reception-need',
         phrase: '접수할 때 도움이 필요하시군요.' },
@@ -64,6 +64,11 @@ export const FIXED_CLIPS = [
   { clipId: 'confirm-all', text: '이렇게 가시는 게 맞으면, 길 안내 시작을 눌러 주세요.' },
   { clipId: 'checklist-screen', text: '신분증과 진료의뢰서를 챙기셨으면, 챙겼어요를 눌러 주세요.' },
   { clipId: 'arrive-show', text: '직원에게 이 화면을 보여 주세요.' },
+  // Get-off alert on the bus screen (location is used only while the alert is on).
+  { clipId: 'alert-intro', text: '위치 확인을 허락하시면, 내리실 정류장에 가까워질 때 알려 드릴게요.' },
+  { clipId: 'alert-near', text: '곧 내리실 정류장입니다. 하차 벨을 눌러 주세요.' },
+  { clipId: 'alert-now', text: '이번 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.' },
+  { clipId: 'alert-off', text: '위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.' },
 ];
 
 /** Wording and leading symbol of each answer button on the question screens, by field and value. */
