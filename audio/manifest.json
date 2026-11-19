@@ -83,7 +83,7 @@
       }
     },
     "I3": {
-      "text": "그다음에는 진료받으실 과의 간호사 스테이션에 가서 접수하세요.",
+      "text": "노인의료센터 간호사 스테이션에서 접수하세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
@@ -308,6 +308,150 @@
     },
     "alert-early": {
       "text": "여기는 서울대학교병원 정류장이에요. 아직 내리지 마세요. 다음 정류장에서 내리세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I4": {
+      "text": "이름을 부르면 진료실로 들어가세요. 진료가 끝나면 눌러 주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I4-detail": {
+      "text": "순서가 되면 이름을 불러요. 잘 모르시겠으면 간호사 스테이션 직원에게 물어보세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I5": {
+      "text": "원무 수납 창구에서 진료비를 내세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I6": {
+      "text": "채혈실에서 피검사를 받으세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I7": {
+      "text": "영상의학과에서 가슴 사진을 찍으세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I8": {
+      "text": "처방전을 받으세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I8-detail": {
+      "text": "병원 누리집에는 처방전을 창구나 무인수납기에서 받는다고 나와 있어요. 어디서 받는지 잘 모르시겠으면 직원에게 물어보세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I9": {
+      "text": "약국에서 약을 받으세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "I9-detail": {
+      "text": "약을 어디서 받는지는 아직 확인하지 못했어요. 처방전에 적힌 안내를 따르시고, 잘 모르시겠으면 직원에게 물어보세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "R1": {
+      "text": "일동 출입구로 나가세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "R1-detail": {
+      "text": "나가는 길은 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "R2": {
+      "text": "서울대병원 정류장에서 칠 다시 일번 마을버스를 타세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "R2-detail": {
+      "text": "정류장 이름은 서울대병원이에요. 비슷한 이름의 서울대학교병원 정류장과 헷갈리지 않게 확인하세요. 잘 모르시겠으면 병원 직원에게 물어보세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "R3": {
+      "text": "미금역 농협 정류장에서 내리세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "R3-detail": {
+      "text": "타는 곳에서 세 번째 정류장이에요. 정류장의 정식 이름은 미금역 농협 이천일 아울렛이에요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "R4": {
+      "text": "미금역에 도착했어요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "alert-return-early": {
+      "text": "여기는 청솔마을 정류장이에요. 아직 내리지 마세요. 다음 정류장에서 내리세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "alert-return-near": {
+      "text": "다음 정류장, 미금역에서 내려요. 하차 벨을 눌러 주세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
