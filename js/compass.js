@@ -53,16 +53,31 @@ export function quantiseHeading(raw, prevStep = null) {
 }
 
 /**
+ * Rotation of the screen in degrees clockwise-from-portrait (0, 90, 180, 270), or 0 when unknown.
+ * Uses screen.orientation.angle, then the older window.orientation (which may be -90 for 270).
+ */
+export function screenAngleDeg(win = globalThis.window) {
+  if (!win) return 0;
+  const a = win.screen && win.screen.orientation && win.screen.orientation.angle;
+  if (typeof a === 'number' && Number.isFinite(a)) return a;
+  if (typeof win.orientation === 'number' && Number.isFinite(win.orientation)) return win.orientation;
+  return 0;
+}
+
+/**
  * Compass heading from a DeviceOrientationEvent, or null when it is not a real compass reading.
  * iOS gives `webkitCompassHeading`; elsewhere `alpha` is a compass value only when `absolute`.
+ * Both describe the device's top edge, so the screen rotation `angleDeg` is added here (the only
+ * place) to get the direction the screen top points to: heading = norm360(raw + angle).
  */
-export function headingFromEvent(e) {
+export function headingFromEvent(e, angleDeg = 0) {
   if (!e) return null;
+  const turn = Number.isFinite(angleDeg) ? angleDeg : 0;
   if (typeof e.webkitCompassHeading === 'number' && Number.isFinite(e.webkitCompassHeading)) {
-    return norm360(e.webkitCompassHeading);
+    return norm360(e.webkitCompassHeading + turn);
   }
   if (e.absolute === true && typeof e.alpha === 'number' && Number.isFinite(e.alpha)) {
-    return norm360(360 - e.alpha);
+    return norm360(360 - e.alpha + turn);
   }
   return null;
 }
@@ -91,7 +106,7 @@ export async function startCompass(onHeading, onUnavailable, timeoutMs = 3000) {
   }
   let got = false;
   const handler = (e) => {
-    const h = headingFromEvent(e);
+    const h = headingFromEvent(e, screenAngleDeg(window));
     if (h === null) return;
     got = true;
     onHeading(h);
@@ -103,5 +118,43 @@ export async function startCompass(onHeading, onUnavailable, timeoutMs = 3000) {
     clearTimeout(timer);
     window.removeEventListener('deviceorientationabsolute', handler, true);
     window.removeEventListener('deviceorientation', handler, true);
+  };
+}
+
+/**
+ * Owns one compass session for the app: ignores a second turnOn() while the first is still starting
+ * (permission prompt pending), lets a session be ended from outside, and drops late callbacks of an
+ * ended session. `start` is injectable for tests.
+ */
+export function createCompassController({ start = startCompass, onHeading, onUnavailable }) {
+  let starting = false;
+  let stop = null;
+  let session = 0;
+  return {
+    get starting() { return starting; },
+    get active() { return starting || stop !== null; },
+    /** Starts (or restarts) the compass. Returns false and does nothing while a start is pending. */
+    turnOn() {
+      if (starting) return false;
+      if (stop) { stop(); stop = null; }
+      starting = true;
+      const mine = ++session;
+      Promise.resolve(start(
+        (hd) => { if (mine === session) onHeading(hd); },
+        (reason) => { if (mine === session) onUnavailable(reason); },
+      )).catch(() => null).then((s) => {
+        if (mine !== session) { if (typeof s === 'function') s(); return; } // ended while starting
+        starting = false;
+        stop = typeof s === 'function' ? s : null;
+      });
+      return true;
+    },
+    /** Ends the session; a pending start is cancelled and its late result is discarded. */
+    turnOff() {
+      session += 1;
+      starting = false;
+      if (stop) stop();
+      stop = null;
+    },
   };
 }

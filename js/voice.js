@@ -38,6 +38,9 @@ export function hasRecording(manifest, voice, clipId, text) {
 
 let manifestPromise = null;
 let currentAudio = null;
+// ONE element plays every clip. iOS Safari only lets an element that was started by a tap play
+// later without a tap (chained clips, location alerts), so the element is kept and its src swapped.
+let sharedAudio = null;
 let audioCtx = null;
 // Bumped by every speak() and stopSpeaking(). A call whose generation is no longer current is
 // stale: it must not start, fall back or let a chained clip fire.
@@ -76,6 +79,9 @@ export function preloadManifest() {
 export function resetVoiceForTests() {
   manifestPromise = null;
   currentAudio = null;
+  sharedAudio = null;
+  unlockPromise = null;
+  speechPrimed = false;
   settleActive = null;
   generation = 0;
 }
@@ -101,6 +107,70 @@ export function stopSpeaking() {
   haltOutput();
 }
 
+function getSharedAudio() {
+  if (!sharedAudio) sharedAudio = new Audio();
+  return sharedAudio;
+}
+
+// 16 samples of 8-bit silence, only used to unlock the shared element inside a user gesture.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRjQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YRAAAACAgICAgICAgICAgICAgICA';
+let unlockPromise = null; // pending or successful unlock; null when none was tried or the last try failed
+let speechPrimed = false;
+
+/**
+ * Call from a user gesture. Starts the shared audio element with a silent sound and pauses it again,
+ * and primes Web Speech once with an empty utterance, so later clips and alerts that start without a
+ * tap are not blocked (iOS Safari). Resolves to true once the element is unlocked. After a success it
+ * does nothing; after a failure (the browser did not count that event as a gesture) the next gesture
+ * tries again. Never interrupts a clip that is already playing.
+ */
+export function unlockAudio() {
+  if (unlockPromise) return unlockPromise;
+  let result = Promise.resolve(true);
+  try {
+    if (typeof Audio !== 'undefined' && !currentAudio) {
+      const a = getSharedAudio();
+      a.src = SILENT_WAV;
+      const p = a.play();
+      if (p && typeof p.then === 'function') result = p.then(() => true, () => false);
+      a.pause();
+    }
+  } catch {
+    result = Promise.resolve(false);
+  }
+  try {
+    if (!speechPrimed && typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined'
+      && !speechSynthesis.speaking) {
+      speechPrimed = true;
+      const u = new SpeechSynthesisUtterance('');
+      u.volume = 0;
+      speechSynthesis.speak(u);
+    }
+  } catch { /* ignore */ }
+  const mine = result.then((ok) => {
+    if (!ok && unlockPromise === mine) unlockPromise = null;
+    return ok;
+  });
+  unlockPromise = mine;
+  return mine;
+}
+
+const UNLOCK_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown'];
+
+/**
+ * Unlocks audio on the first user gesture on `doc` (several event types, because browsers differ in
+ * which one counts). The listeners stay until an unlock succeeded. Returns a function that removes them.
+ */
+export function installAudioUnlock(doc = globalThis.document) {
+  if (!doc || typeof doc.addEventListener !== 'function') return () => {};
+  const off = () => UNLOCK_EVENTS.forEach((t) => doc.removeEventListener(t, onGesture, true));
+  function onGesture() {
+    unlockAudio().then((ok) => { if (ok) off(); });
+  }
+  UNLOCK_EVENTS.forEach((t) => doc.addEventListener(t, onGesture, true));
+  return off;
+}
+
 function playMp3(url, rate, timeoutMs) {
   return new Promise((resolve, reject) => {
     if (typeof Audio === 'undefined') {
@@ -114,11 +184,21 @@ function playMp3(url, rate, timeoutMs) {
       done = true;
       clearTimeout(timer);
       if (settleActive === abort) settleActive = null;
+      // The element is reused: detach this clip's handlers, and stop a clip that failed or stalled.
+      a.onended = null;
+      a.onerror = null;
+      if (fn === reject) {
+        try { a.pause(); } catch { /* ignore */ }
+      }
       fn(arg);
     };
     const abort = () => finish(reject, abortError());
-    const a = new Audio(url);
-    a.playbackRate = mp3RateFor(rate);
+    const a = getSharedAudio();
+    // Handlers first: a previous clip's handlers must not see this clip's load.
+    a.onended = null;
+    a.onerror = null;
+    a.src = url;
+    a.playbackRate = mp3RateFor(rate); // after src: loading a new source resets the rate
     currentAudio = a;
     settleActive = abort;
     a.onended = () => finish(resolve);

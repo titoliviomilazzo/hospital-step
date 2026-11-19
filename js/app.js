@@ -3,10 +3,10 @@
 import { loadRoute, OUTDOOR_STAGES } from './route.js';
 import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_SENTENCE, HELP_SPEECH, REASK_HOSPITAL_SPEECH, alertSentences } from './clips.js';
 import { loadState, saveState } from './storage.js';
-import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking } from './voice.js';
+import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking, installAudioUnlock } from './voice.js';
 import { createListener } from './listen.js';
 import { parseVisit, expandAbbreviations } from './intent.js';
-import { arrowAngle, bearingDeg, startCompass, quantiseHeading } from './compass.js';
+import { arrowAngle, bearingDeg, createCompassController, quantiseHeading } from './compass.js';
 import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
@@ -131,6 +131,60 @@ export function indoorOrder(route) {
   return route.points.filter((q) => q.stage === 'indoor').map((q) => q.display);
 }
 
+/** Label of the resume button: stage and position in the stage, exactly as the header shows them. */
+export function resumeLabel(state, route) {
+  const i = resumeIndex(state, route);
+  if (i === null) return null;
+  const { cur, total } = progressOf({ ...state, index: i }, route);
+  return `이어서 안내 받기 (${STAGE_LABEL[route.points[i].stage]} ${cur} / ${total})`;
+}
+
+/** Identity of what the screen shows; a change means the user is looking at something new. */
+export function screenKeyOf(state, route) {
+  return `${state.index}|${state.arrived}|${state.prepStep}|${screenOf(state, route)}`;
+}
+
+/** Scroll to the top only when the screen changed and no overlay is open. */
+export function shouldScrollTop(prevKey, key, overlayOpen) {
+  return !overlayOpen && prevKey !== key;
+}
+
+/**
+ * Remembers which `<details>` (by id) are open and which element (by id) has focus inside `root`,
+ * so a full re-render can put them back. `active` is document.activeElement.
+ */
+export function captureUiState(root, active) {
+  const open = [...root.querySelectorAll('details[open]')].map((d) => d.id).filter(Boolean);
+  let focus = null;
+  if (active && active.id && root.contains(active)) {
+    focus = { id: active.id };
+    if (typeof active.selectionStart === 'number') {
+      focus.selStart = active.selectionStart;
+      focus.selEnd = active.selectionEnd;
+    }
+  }
+  return { open, focus };
+}
+
+/** Counterpart of captureUiState, run on the freshly built `root`. */
+export function restoreUiState(root, saved) {
+  if (!saved) return;
+  const byId = (id) => [...root.querySelectorAll('[id]')].find((el) => el.id === id) || null;
+  for (const id of saved.open) {
+    const d = byId(id);
+    if (d && d.tagName === 'DETAILS') d.open = true;
+  }
+  if (saved.focus) {
+    const el = byId(saved.focus.id);
+    if (el && typeof el.focus === 'function') {
+      el.focus({ preventScroll: true });
+      if (saved.focus.selStart !== undefined && typeof el.setSelectionRange === 'function') {
+        try { el.setSelectionRange(saved.focus.selStart, saved.focus.selEnd); } catch { /* ignore */ }
+      }
+    }
+  }
+}
+
 /** Index to resume at: the point after the last confirmed one, or null when there is none. */
 export function resumeIndex(state, route) {
   if (!state.lastPointId) return null;
@@ -155,6 +209,8 @@ export function nextState(state, action, route) {
       return { ...state, lastPointId, index: state.index + 1 };
     }
     case 'PREV':
+      // On the finish screen PREV only leaves it: the user stays on the last point.
+      if (state.arrived) return { ...state, arrived: false };
       return state.index <= 0
         ? { ...state, index: -1, arrived: false }
         : { ...state, index: state.index - 1, arrived: false };
@@ -293,6 +349,7 @@ function boot(route, support, floor = null) {
   let settings = stored.settings;
   let state = initialState(stored.lastPointId);
   let wasOverlay = false;
+  let lastScreenKey = null; // screenKeyOf() at the last scroll-to-top
   let openerSel = null; // selector of the control that opened the overlay; focus returns there
 
   // Screen 1 parse state. Memory only; never persisted.
@@ -309,7 +366,6 @@ function boot(route, support, floor = null) {
   // Arrow state. `heading` is the real compass reading (null until one arrives).
   let heading = null;
   let compassMsg = null;
-  let stopCompass = null;
   let floorStep = null; // steady heading (multiple of 15) the floor map is drawn with; null = north up
   let floorHost = null; // the element that holds the floor figure currently on screen
   let sim = initialSim();
@@ -402,18 +458,35 @@ function boot(route, support, floor = null) {
         const clip = alertsFor(p)[level];
         say(clip.clipId, clip.text);
         vibrate(ALERT_VIBRATION);
-        render();
+        refreshAlightPanel(p); // background event: only the panel changes, open details and focus stay
       },
       onError: () => {
         if (alightPointId !== p.id) return;
         alightStop = null;
         alightFailed = true;
         say('alert-off', CLIP_TEXT['alert-off']);
-        render();
+        refreshAlightPanel(p);
       },
     });
     if (alightPointId === p.id && !alightFailed) alightStop = ctl.stop;
     render();
+  }
+
+  /** Rebuilds only the alert panel in place; falls back to a full render when it is not on screen. */
+  function refreshAlightPanel(p) {
+    const old = document.getElementById('alight-panel');
+    if (!old || !old.isConnected) {
+      render();
+      return;
+    }
+    const active = document.activeElement;
+    const focusId = active && old.contains(active) ? active.id : '';
+    const fresh = alightPanel(p);
+    old.replaceWith(fresh);
+    if (focusId) {
+      const el = [...fresh.querySelectorAll('[id]')].find((e) => e.id === focusId);
+      if (el) el.focus({ preventScroll: true });
+    }
   }
 
   /** The get-off alert controls and status for a point that has an alertCoord. */
@@ -466,7 +539,10 @@ function boot(route, support, floor = null) {
       const text = locationText(parsed, wanted.arrival.routeName, Boolean(wanted.hours));
       if (text !== arrivalMsg) {
         arrivalMsg = text;
-        render();
+        // Background refresh: change only the panel text; a full render would close open details.
+        const el = document.querySelector('#arrival-panel .arrival-text');
+        if (el) el.textContent = text;
+        else render();
       }
     };
     arrivalMsg = '버스 위치를 확인하는 중이에요...';
@@ -562,7 +638,7 @@ function boot(route, support, floor = null) {
       main.append(h('button', { class: 'btn wide', id: 'btn-resume', onclick: () => {
         dispatch({ type: 'RESUME' });
         speakThen(say('ui-resume', CLIP_TEXT['ui-resume']), () => sayCurrent());
-      } }, `이어서 안내 받기 (${ri + 1}번째 지점)`));
+      } }, resumeLabel(state, route)));
     }
     const footer = wizardFooter();
     if (footer) main.append(footer);
@@ -607,7 +683,7 @@ function boot(route, support, floor = null) {
     }
     main.append(list);
     if (support) {
-      main.append(h('details', { class: 'more' }, h('summary', {}, '자세히'),
+      main.append(h('details', { class: 'more', id: 'details-checklist' }, h('summary', {}, '자세히'),
         row('출처', support.visitChecklist.source)));
     }
     const footer = wizardFooter();
@@ -653,7 +729,7 @@ function boot(route, support, floor = null) {
   }
 
   function pointDetails(p) {
-    const d = h('details', { class: 'more' }, h('summary', {}, '자세히'));
+    const d = h('details', { class: 'more', id: `details-${p.id}` }, h('summary', {}, '자세히'));
     if (p.sign) d.append(row('찾을 표지판', p.sign));
     if (p.hours) d.append(row('운행 시간', p.hours));
     if (p.detail) {
@@ -804,27 +880,41 @@ function boot(route, support, floor = null) {
     return box;
   }
 
+  const compass = createCompassController({
+    onHeading: (hd) => {
+      const first = heading === null;
+      const hadMsg = compassMsg !== null; // a late reading after a 'no-data' message clears it
+      heading = hd;
+      compassMsg = null;
+      if (first || hadMsg) render();
+      else {
+        refreshArrow();
+        // The map redraws only when the 15-degree step changes (see quantiseHeading).
+        if (!settings.sim && syncFloorStep()) redrawFloor();
+      }
+    },
+    onUnavailable: (reason) => {
+      compassMsg = reason === 'denied'
+        ? '방향 센서 사용이 허용되지 않았어요. 표지판을 따라가세요.'
+        : '이 기기에서는 방향 센서를 쓸 수 없어요. 표지판을 따라가세요.';
+      render();
+    },
+  });
+
   function onCompass() {
-    if (stopCompass) stopCompass();
+    if (compass.starting) return; // a second tap while the permission prompt is open
     compassMsg = null;
-    startCompass(
-      (hd) => {
-        const first = heading === null;
-        heading = hd;
-        if (first) render();
-        else {
-          refreshArrow();
-          // The map redraws only when the 15-degree step changes (see quantiseHeading).
-          if (!settings.sim && syncFloorStep()) redrawFloor();
-        }
-      },
-      (reason) => {
-        compassMsg = reason === 'denied'
-          ? '방향 센서 사용이 허용되지 않았어요. 표지판을 따라가세요.'
-          : '이 기기에서는 방향 센서를 쓸 수 없어요. 표지판을 따라가세요.';
-        render();
-      },
-    ).then((stop) => { stopCompass = stop; });
+    compass.turnOn();
+  }
+
+  /** Ends the compass when the visible screen has no use for it, so it can be turned on again later. */
+  function syncCompass(p) {
+    const wanted = !settings.sim && p !== null && (arrowCouldDraw() || showsFloorMap(p));
+    if (wanted || !(compass.active || heading !== null || compassMsg !== null)) return;
+    compass.turnOff();
+    heading = null;
+    compassMsg = null;
+    if (!settings.sim) floorStep = null; // north up until a new reading; sim mode keeps its slider step
   }
 
   // ------------------------------------------------------------ screen 1 input
@@ -1032,14 +1122,24 @@ function boot(route, support, floor = null) {
     else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
 
     syncArrival(p);
+    syncCompass(p);
     disposeArrow3d();
     arrowCtl = null;
     arrowToken += 1;
+    const saved = captureUiState($('screen'), document.activeElement);
     $('screen').replaceChildren(...[
       settings.sim ? h('div', { class: 'sim-banner', role: 'status' }, BANNER_TEXT) : null,
       p ? renderPoint(p) : renderPrepare(),
     ].filter(Boolean));
-    if (!state.helpOpen && !state.companionOpen && !state.settingsOpen) $('main').scrollTop = 0;
+    restoreUiState($('screen'), saved);
+    // The document scrolls, not #main. Go to the top only when the screen changed, never for a
+    // background re-render and never while an overlay is open.
+    const overlayOpen = state.helpOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
+    const key = screenKeyOf(state, route);
+    if (shouldScrollTop(lastScreenKey, key, overlayOpen)) {
+      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
+      lastScreenKey = key;
+    }
 
     // The primary button keeps its place on every screen; when it has nothing to do it is only hidden.
     const primary = $('btn-primary');
@@ -1165,6 +1265,7 @@ function showLoadError(err) {
 async function start() {
   const $ = (id) => document.getElementById(id);
   installEarlyHelp();
+  installAudioUnlock(); // first tap unlocks the shared audio element for later untapped clips
   $('btn-settings').disabled = true;
   $('btn-replay').disabled = true;
   setInstruction('안내 자료를 불러오는 중이에요...');
