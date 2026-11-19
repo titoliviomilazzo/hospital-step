@@ -79,7 +79,7 @@ function busIcon(x, y, w, h) {
 
 /**
  * Which picture and label a route point gets. `kind` is exit, bus, busstop, building, sign or
- * generic. The label is a piece of the point's own text, or null when nothing fits.
+ * generic, or one of the indoor kinds consult, pay, blood, xray, prescription, medicine, wait. The label is a piece of the point's own text, or null when nothing fits.
  */
 export function pictoSpec(point) {
   const display = String(point.display || '');
@@ -94,15 +94,74 @@ export function pictoSpec(point) {
     if (exit) return { kind: 'exit', label: exit[1] };
     const bld = /(\d+동)/.exec(display);
     if (bld) return { kind: 'building', label: bld[1] };
+    const station = /([가-힣]+역)에/.exec(display);
+    if (station) return { kind: 'building', label: station[1] };
     return { kind: 'generic', label: null };
   }
   if (point.kind === 'indoor') {
     if (point.sign) return { kind: 'sign', label: point.sign };
-    const m = /(간호사 스테이션)/.exec(display);
-    return { kind: 'sign', label: m ? m[1] : null };
+    // Chosen by the point's own data, never by its id: waiting, then the words of its sentence,
+    // then its facility number. The label is always a piece of the sentence itself.
+    const find = (re) => { const m = re.exec(display); return m ? m[1] : null; };
+    if (point.wait === true) return { kind: 'wait', label: find(/(진료실)/) };
+    const rx = find(/(처방전)/);
+    if (rx) return { kind: 'prescription', label: rx };
+    const blood = find(/(채혈실)/);
+    if (blood) return { kind: 'blood', label: blood };
+    const xray = find(/(영상의학과)/);
+    if (xray) return { kind: 'xray', label: xray };
+    const med = find(/(약국)/);
+    if (med) return { kind: 'medicine', label: med };
+    const pay = find(/(원무 수납)/);
+    if (pay) return { kind: 'pay', label: pay };
+    const consult = find(/(진료실)/);
+    if (consult) return { kind: 'consult', label: consult };
+    // Reception and other desks keep the sign picture, with a place name from the sentence.
+    return { kind: 'sign', label: find(/(간호사 스테이션)/) };
   }
   return { kind: 'generic', label: null };
 }
+
+// Indoor pictures: simple flat icons in the 300x280 picture frame, drawn in the top 150 units
+// (the label goes below, like the exit and building pictures). They show no text of their own.
+const WHITE_LINE = (w) => `stroke="#fff" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+const INDOOR_ICON = {
+  // stethoscope: two ear tips, a tube and the round chest piece
+  consult: () => `<path d="M104 28 V68 Q104 104 150 104 Q196 104 196 68 V28" fill="none" ${stroke(8)}/>`
+    + `<circle cx="104" cy="26" r="7" fill="${INK}"/><circle cx="196" cy="26" r="7" fill="${INK}"/>`
+    + `<line x1="150" y1="104" x2="150" y2="116" ${stroke(8)}/>`
+    + `<circle cx="150" cy="128" r="14" fill="${SOFT}" ${stroke(6)}/>`,
+  // counter with a card lying on it
+  pay: () => `<rect x="104" y="22" width="92" height="62" rx="9" fill="#fff" ${stroke(6)}/>`
+    + `<line x1="104" y1="42" x2="196" y2="42" ${stroke(6)}/>`
+    + `<line x1="116" y1="64" x2="150" y2="64" ${stroke(5)}/>`
+    + `<rect x="60" y="88" width="180" height="52" rx="8" fill="${SOFT}" ${stroke(7)}/>`,
+  // arm with a test tube
+  blood: () => `<rect x="34" y="66" width="140" height="40" rx="20" fill="${SOFT}" ${stroke(7)}/>`
+    + `<line x1="174" y1="86" x2="202" y2="86" ${stroke(6)}/>`
+    + `<path d="M202 22 H238 V110 a18 18 0 0 1 -36 0 Z" fill="#fff" ${stroke(6)}/>`
+    + `<path d="M202 88 H238 V110 a18 18 0 0 1 -36 0 Z" fill="${INK}"/>`,
+  // chest picture: dark film with a spine and ribs
+  xray: () => `<rect x="82" y="16" width="136" height="126" rx="10" fill="${INK}"/>`
+    + `<line x1="150" y1="28" x2="150" y2="130" ${WHITE_LINE(6)}/>`
+    + [44, 66, 88].map((y) => `<path d="M150 ${y} Q116 ${y + 2} 104 ${y + 24}" fill="none" ${WHITE_LINE(5)}/>`
+      + `<path d="M150 ${y} Q184 ${y + 2} 196 ${y + 24}" fill="none" ${WHITE_LINE(5)}/>`).join(''),
+  // paper with folded corner and lines
+  prescription: () => `<path d="M104 18 H178 L200 40 V142 H104 Z" fill="#fff" ${stroke(6)}/>`
+    + `<path d="M178 18 V40 H200" fill="${SOFT}" ${stroke(6)}/>`
+    + [66, 88, 110].map((y) => `<line x1="118" y1="${y}" x2="186" y2="${y}" ${stroke(5)}/>`).join(''),
+  // medicine bag with a cross
+  medicine: () => `<rect x="96" y="40" width="108" height="100" rx="8" fill="${SOFT}" ${stroke(7)}/>`
+    + `<rect x="96" y="22" width="108" height="22" rx="6" fill="#fff" ${stroke(6)}/>`
+    + `<rect x="126" y="66" width="48" height="48" rx="6" fill="#fff" ${stroke(5)}/>`
+    + `<line x1="150" y1="74" x2="150" y2="106" ${stroke(7)}/><line x1="134" y1="90" x2="166" y2="90" ${stroke(7)}/>`,
+  // chair seen from the side
+  wait: () => `<line x1="108" y1="24" x2="108" y2="100" ${stroke(10)}/>`
+    + `<rect x="104" y="84" width="96" height="18" rx="5" fill="${SOFT}" ${stroke(6)}/>`
+    + `<line x1="112" y1="102" x2="112" y2="142" ${stroke(8)}/><line x1="192" y1="102" x2="192" y2="142" ${stroke(8)}/>`,
+};
+
+export const INDOOR_KINDS = Object.keys(INDOOR_ICON);
 
 /** The picture-box SVG string for a spec from pictoSpec(). */
 export function pictoSvg(spec) {
@@ -126,7 +185,9 @@ export function pictoSvg(spec) {
     return frame(board + text, aria);
   }
   let icon;
-  if (kind === 'exit') {
+  if (INDOOR_ICON[kind]) {
+    icon = INDOOR_ICON[kind]();
+  } else if (kind === 'exit') {
     icon = `<rect x="96" y="20" width="108" height="120" rx="10" fill="${SOFT}" ${stroke()}/>`
       + `<rect x="116" y="44" width="68" height="96" fill="#fff" ${stroke(4)}/>`
       + `<polygon points="150,54 174,86 160,86 160,126 140,126 140,86 126,86" fill="${INK}"/>`;

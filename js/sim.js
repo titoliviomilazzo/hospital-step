@@ -2,6 +2,7 @@
 // The pure part is importable in Node. Axis convention: sim x is east, sim y is NORTH (up on the
 // mini map). The sim values in the route data are a schematic, never real positions.
 import { schematicBearingDeg, arrowAngle } from './compass.js';
+import { OUTDOOR_STAGES } from './route.js';
 
 export const BANNER_TEXT = '시뮬레이션 · 모식도';
 export const MAP_NOTE = '모식도예요. 실제 거리와 방향이 아니에요.';
@@ -24,14 +25,15 @@ export function simReducer(state, action) {
 }
 
 /**
- * Arrow for the point at `index`, or null. Only a travel point whose next point is also a travel
- * point gets an arrow: the last outdoor point and every indoor point show the sign panel only.
- * Returns {bearing, angle}; `bearing` is from sim positions, `angle` is relative to the heading.
+ * Arrow for the point at `index`, or null. Only an outdoor point (travel or return) whose next
+ * point is also outdoor gets an arrow: the last outdoor point of a stage and every indoor point
+ * show the sign panel only. Returns {bearing, angle}; `bearing` is from sim positions, `angle`
+ * is relative to the heading.
  */
 export function simArrow(route, index, heading) {
   const cur = route.points[index];
   const next = route.points[index + 1];
-  if (!cur || !next || cur.stage !== 'travel' || next.stage !== 'travel') return null;
+  if (!cur || !next || !OUTDOOR_STAGES.includes(cur.stage) || cur.stage !== next.stage) return null;
   if (!cur.sim || !next.sim) return null;
   const bearing = schematicBearingDeg(cur.sim, next.sim);
   return { bearing, angle: arrowAngle(bearing, heading) };

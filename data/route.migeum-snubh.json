@@ -1,6 +1,6 @@
 {
   "id": "migeum-snubh-first-visit",
-  "title": "미금역에서 분당서울대병원 1동 1층 처음오신 창구까지",
+  "title": "미금역에서 분당서울대병원 1동 1층까지 갔다가 미금역으로 돌아오기",
   "retrieved": "2026-11-19",
   "points": [
     {
@@ -158,14 +158,15 @@
       "busNumber": null,
       "coord": null,
       "sim": {
-        "x": 85,
-        "y": 20
+        "x": 87.4,
+        "y": 23.8
       },
       "status": "현장 미확인",
       "checkedOn": null,
       "source": "분당서울대병원 누리집(snubh.org) 외래진료안내",
       "gap": false,
-      "detailSpeech": "로비에 있는 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 처음 오신 창구가 어디인지 물어보세요."
+      "detailSpeech": "로비에 있는 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 처음 오신 창구가 어디인지 물어보세요.",
+      "floor": "snubh-1dong-1f"
     },
     {
       "id": "I2",
@@ -180,33 +181,316 @@
       "busNumber": null,
       "coord": null,
       "sim": {
-        "x": 85,
-        "y": 20
+        "x": 87.4,
+        "y": 23.8
       },
       "status": "현장 미확인",
       "checkedOn": null,
       "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 3단계",
-      "gap": false
+      "gap": false,
+      "floor": "snubh-1dong-1f"
     },
     {
       "id": "I3",
       "stage": "indoor",
       "order": 7,
-      "display": "그다음 진료받을 과의 간호사 스테이션에서 접수하세요.",
-      "speech": "그다음에는 진료받으실 과의 간호사 스테이션에 가서 접수하세요.",
+      "display": "노인의료센터 간호사 스테이션에서 접수하세요.",
+      "speech": "노인의료센터 간호사 스테이션에서 접수하세요.",
       "detail": "",
       "sign": null,
-      "confirmLabel": "안내를 확인했어요",
+      "confirmLabel": "접수했어요",
       "kind": "indoor",
       "busNumber": null,
       "coord": null,
       "sim": {
-        "x": 90,
-        "y": 12
+        "x": 80,
+        "y": 24.2
       },
       "status": "현장 미확인",
       "checkedOn": null,
-      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 4단계",
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 4단계; 층별안내 1동 1층 9번 노인의료센터",
+      "gap": false,
+      "facility": 9,
+      "floor": "snubh-1dong-1f"
+    },
+    {
+      "id": "I4",
+      "stage": "indoor",
+      "order": 8,
+      "display": "이름을 부르면 진료실로 들어가세요. 진료가 끝나면 눌러 주세요.",
+      "speech": "이름을 부르면 진료실로 들어가세요. 진료가 끝나면 눌러 주세요.",
+      "detail": "순서가 되면 이름을 불러요. 잘 모르시겠으면 간호사 스테이션 직원에게 물어보세요.",
+      "sign": null,
+      "confirmLabel": "진료가 끝났어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 80,
+        "y": 24.2
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 5단계; 층별안내 1동 1층 9번 노인의료센터",
+      "gap": false,
+      "facility": 9,
+      "floor": "snubh-1dong-1f",
+      "wait": true
+    },
+    {
+      "id": "I5",
+      "stage": "indoor",
+      "order": 9,
+      "display": "원무 수납 창구에서 진료비를 내세요.",
+      "speech": "원무 수납 창구에서 진료비를 내세요.",
+      "detail": "",
+      "sign": null,
+      "confirmLabel": "진료비를 냈어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 82.4,
+        "y": 28.4
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 5단계 수납; 층별안내 1동 1층 7번 원무(예약/수납)",
+      "gap": false,
+      "facility": 7,
+      "floor": "snubh-1dong-1f"
+    },
+    {
+      "id": "I6",
+      "stage": "indoor",
+      "order": 10,
+      "display": "채혈실에서 피검사를 받으세요.",
+      "speech": "채혈실에서 피검사를 받으세요.",
+      "detail": "",
+      "sign": null,
+      "confirmLabel": "피검사를 했어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 90.6,
+        "y": 26.4
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 5단계 채혈 및 검사; 층별안내 1동 1층 17번 채혈실",
+      "gap": false,
+      "facility": 17,
+      "floor": "snubh-1dong-1f"
+    },
+    {
+      "id": "I7",
+      "stage": "indoor",
+      "order": 11,
+      "display": "영상의학과에서 가슴 사진을 찍으세요.",
+      "speech": "영상의학과에서 가슴 사진을 찍으세요.",
+      "detail": "",
+      "sign": null,
+      "confirmLabel": "사진을 찍었어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 92.6,
+        "y": 31.4
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "분당서울대병원 누리집(snubh.org) 층별안내 1동 1층 1번 영상의학과(일반, 흉부촬영)",
+      "gap": false,
+      "facility": 1,
+      "floor": "snubh-1dong-1f"
+    },
+    {
+      "id": "I8",
+      "stage": "indoor",
+      "order": 12,
+      "display": "처방전을 받으세요.",
+      "speech": "처방전을 받으세요.",
+      "detail": "병원 누리집에는 처방전을 창구나 무인수납기에서 받는다고 나와 있어요. 어디서 받는지 잘 모르시겠으면 직원에게 물어보세요.",
+      "sign": null,
+      "confirmLabel": "처방전을 받았어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 82.4,
+        "y": 28.4
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "분당서울대병원 누리집(snubh.org) 외래진료안내 5단계 수납 및 약처방 발행(창구, 무인수납기); 받는 자리는 현장 미확인",
+      "gap": false,
+      "facility": 7,
+      "floor": "snubh-1dong-1f"
+    },
+    {
+      "id": "I9",
+      "stage": "indoor",
+      "order": 13,
+      "display": "약국에서 약을 받으세요.",
+      "speech": "약국에서 약을 받으세요.",
+      "detail": "약을 어디서 받는지는 아직 확인하지 못했어요. 처방전에 적힌 안내를 따르시고, 잘 모르시겠으면 직원에게 물어보세요.",
+      "sign": null,
+      "confirmLabel": "약을 받았어요",
+      "kind": "indoor",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 85.8,
+        "y": 30.4
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "분당서울대병원 누리집(snubh.org) 층별안내 1동 1층 3번 외래약국; 약을 받는 곳은 공식 자료로 확정하지 못함(미확인)",
+      "gap": true,
+      "facility": 3,
+      "floor": "snubh-1dong-1f"
+    },
+    {
+      "id": "R1",
+      "stage": "return",
+      "order": 14,
+      "display": "1동 출입구로 나가세요.",
+      "speech": "일동 출입구로 나가세요.",
+      "detail": "나가는 길은 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요.",
+      "sign": null,
+      "confirmLabel": "밖으로 나왔어요",
+      "kind": "walk",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 87.4,
+        "y": 23.8
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "분당서울대병원 누리집(snubh.org) 층별안내 1동 1층 출입구 표시(지도 그림에서 읽은 대략 위치)",
+      "gap": false,
+      "floor": "snubh-1dong-1f"
+    },
+    {
+      "id": "R2",
+      "stage": "return",
+      "order": 15,
+      "display": "서울대병원 정류장에서 마을버스 7-1번을 타세요.",
+      "speech": "서울대병원 정류장에서 칠 다시 일번 마을버스를 타세요.",
+      "detail": "정류장 이름은 서울대병원이에요. 비슷한 이름의 서울대학교병원 정류장과 헷갈리지 않게 확인하세요. 잘 모르시겠으면 병원 직원에게 물어보세요.",
+      "sign": "서울대병원",
+      "confirmLabel": "버스를 탔어요",
+      "kind": "bus",
+      "busNumber": "7-1",
+      "coord": null,
+      "sim": {
+        "x": 60,
+        "y": 40
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "경기도 버스정보(공공데이터포털) 노선 241222004 정류소 206000261, 2026-11-19 조회",
+      "gap": false,
+      "boardCoord": {
+        "lat": 37.3513667,
+        "lon": 127.12375,
+        "source": "경기도 버스정보(공공데이터포털) 정류소 206000261, 2026-11-19 조회",
+        "status": "현장 미확인"
+      },
+      "arrival": {
+        "stationId": 206000261,
+        "routeId": 241222004,
+        "routeName": "7-1",
+        "loopStops": 7,
+        "boardSeq": 4
+      }
+    },
+    {
+      "id": "R3",
+      "stage": "return",
+      "order": 16,
+      "display": "미금역.농협 정류장에서 내리세요.",
+      "speech": "미금역 농협 정류장에서 내리세요.",
+      "detail": "타는 곳에서 세 번째 정류장이에요. 정류장의 정식 이름은 미금역.농협.2001아울렛이에요.",
+      "sign": null,
+      "confirmLabel": "버스에서 내렸어요",
+      "kind": "bus",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 25,
+        "y": 65
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "경기도 버스정보(공공데이터포털) 노선 241222004, 2026-11-19 조회",
+      "gap": false,
+      "detailSpeech": "타는 곳에서 세 번째 정류장이에요. 정류장의 정식 이름은 미금역 농협 이천일 아울렛이에요.",
+      "alertCoord": {
+        "lat": 37.3501833,
+        "lon": 127.1105,
+        "source": "경기도 버스정보(공공데이터포털) 정류소 206000272, 2026-11-19 조회",
+        "status": "현장 미확인"
+      },
+      "busRoute": {
+        "routeName": "7-1",
+        "routeId": 241222004,
+        "stops": [
+          {
+            "seq": 4,
+            "id": 206000261,
+            "name": "서울대병원",
+            "lat": 37.3513667,
+            "lon": 127.12375
+          },
+          {
+            "seq": 5,
+            "id": 206000723,
+            "name": "서울대학교병원",
+            "lat": 37.35075,
+            "lon": 127.1219333
+          },
+          {
+            "seq": 6,
+            "id": 206000177,
+            "name": "청솔마을.주공9단지.동아아파트",
+            "lat": 37.3518833,
+            "lon": 127.1157333
+          },
+          {
+            "seq": 7,
+            "id": 206000272,
+            "name": "미금역.농협.2001아울렛",
+            "lat": 37.3501833,
+            "lon": 127.1105
+          }
+        ],
+        "alightSeq": 7,
+        "source": "경기도 버스정보(공공데이터포털) 노선 241222004 (마을버스 7-1, 성남), 2026-11-19 조회"
+      }
+    },
+    {
+      "id": "R4",
+      "stage": "return",
+      "order": 17,
+      "display": "미금역에 도착했어요.",
+      "speech": "미금역에 도착했어요.",
+      "detail": "",
+      "sign": null,
+      "confirmLabel": "미금역에 왔어요",
+      "kind": "walk",
+      "busNumber": null,
+      "coord": null,
+      "sim": {
+        "x": 10,
+        "y": 80
+      },
+      "status": "현장 미확인",
+      "checkedOn": null,
+      "source": "경기도 버스정보(공공데이터포털) 노선 241222004 정류소 206000272, 2026-11-19 조회",
       "gap": false
     }
   ]

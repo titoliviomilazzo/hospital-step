@@ -10,6 +10,7 @@ export const PALETTE = Object.freeze({
   accentPrepare: '#93c5fd',
   accentTravel: '#6ee7b7',
   accentIndoor: '#fde047',
+  accentReturn: '#fdba74',
 });
 
 /** Every foreground/background pair that carries text in the UI. */
@@ -21,6 +22,7 @@ export const TEXT_PAIRS = Object.freeze([
   { name: 'header and primary button, prepare', fg: 'ink', bg: 'accentPrepare' },
   { name: 'header and primary button, travel', fg: 'ink', bg: 'accentTravel' },
   { name: 'header and primary button, indoor', fg: 'ink', bg: 'accentIndoor' },
+  { name: 'header and primary button, return', fg: 'ink', bg: 'accentReturn' },
   { name: 'simulation banner', fg: 'ink', bg: 'accentIndoor' },
 ]);
 

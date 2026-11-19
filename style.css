@@ -18,6 +18,7 @@
 }
 :root[data-screen="travel"] { --accent: #6ee7b7; }
 :root[data-screen="indoor"] { --accent: #fde047; }
+:root[data-screen="return"] { --accent: #fdba74; }
 :root.large { --fs: 1.5rem; --fs-instr: 44px; }
 
 * { box-sizing: border-box; }
@@ -196,6 +197,12 @@ details.more[open] > summary { margin-bottom: 12px; }
 .arrow-holder { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 100%; overflow: hidden; }
 .arrow-holder canvas { display: block; aspect-ratio: 1 / 1; width: min(280px, 100%); height: auto; }
 .arrow-svg { width: min(280px, 100%); height: auto; }
+/* Floor schematic (simulation mode, indoor points) and the real-mode facility number line. */
+.floor-map { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
+.floor-svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.floor-now, .floor-next { margin: 0; font-size: 28px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.floor-caption { margin: 0; font-size: 20px; font-weight: 700; color: var(--muted); overflow-wrap: anywhere; }
+.floor-ref { margin: 0; font-size: 24px; font-weight: 800; text-align: center; }
 .mini-map { width: 100%; max-width: 240px; height: auto; align-self: center; }
 #sim-panel { align-items: stretch; }
 input[type="range"] { width: 100%; min-height: 44px; }

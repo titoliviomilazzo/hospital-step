@@ -3,6 +3,8 @@
 // so every clip id is defined in exactly one place. It lives under app/ so a deployed app/
 // folder is self-contained.
 
+import { routeStops, earlyText } from './alight.js';
+
 export const HELP_SENTENCE = '분당서울대병원 첫 방문입니다. 1동 1층 처음오신 창구 위치를 알려주세요.';
 // Spoken form of HELP_SENTENCE: first person, numbers in Hangul so TTS reads them as 일동 일층.
 export const HELP_SPEECH = '저는 분당서울대병원에 처음 왔습니다. 일동 일층 처음 오신 창구가 어디인지 알려 주세요.';
@@ -72,6 +74,36 @@ export const FIXED_CLIPS = [
   { clipId: 'alert-off', text: '위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.' },
 ];
 
+// The spoken "now" alert names no stop, so the outbound and the return leg share one clip.
+const ALERT_NOW_SPEECH = '이번 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.';
+
+/**
+ * Plain stop name for a spoken sentence: the part before the first ".". Official names such as
+ * "청솔마을.주공9단지.동아아파트" list landmarks after dots, which is too long to say aloud.
+ */
+export function shortStopName(name) {
+  return String(name).split('.')[0].trim();
+}
+
+/**
+ * The early / near / now alert sentences of the bus point being ridden, built from its busRoute:
+ * early names the stop before the alight stop, near names the alight stop. Returns
+ * {early, near, now} of {clipId, text}, or null when the point has no usable busRoute. The outbound
+ * leg keeps its recorded clip ids (alert-early, alert-near); the return leg has its own
+ * alert-return-* ids because its sentences name other stops.
+ */
+export function alertSentences(point) {
+  if (!point || !point.busRoute) return null;
+  const { alight, prev } = routeStops(point.busRoute);
+  if (!alight || !prev) return null;
+  const prefix = point.stage === 'return' ? 'alert-return' : 'alert';
+  return {
+    early: { clipId: `${prefix}-early`, text: earlyText(shortStopName(prev.name)) },
+    near: { clipId: `${prefix}-near`, text: `다음 정류장, ${shortStopName(alight.name)}에서 내려요. 하차 벨을 눌러 주세요.` },
+    now: { clipId: 'alert-now', text: ALERT_NOW_SPEECH },
+  };
+}
+
 /** Wording and leading symbol of each answer button on the question screens, by field and value. */
 export const ANSWER_BUTTONS = {
   hospital: { '분당서울대병원': { sym: '→', label: '분당서울대병원' } },
@@ -108,6 +140,14 @@ export function buildVoiceRows(route) {
     }
   }
   for (const c of FIXED_CLIPS) rows.push({ ...c });
+  // Return-leg alert clips: the outbound ones are fixed above, so only add ids that are not there yet.
+  for (const p of route.points) {
+    const sent = alertSentences(p);
+    if (!sent) continue;
+    for (const k of ['early', 'near']) {
+      if (!FIXED_CLIPS.some((c) => c.clipId === sent[k].clipId)) rows.push({ ...sent[k] });
+    }
+  }
   for (const f of FIELDS) {
     for (const o of f.options) rows.push({ clipId: o.clipId, text: o.phrase });
   }

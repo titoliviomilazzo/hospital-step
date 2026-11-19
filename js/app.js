@@ -1,7 +1,7 @@
 // State machine and rendering. `nextState` is pure and importable in Node; the DOM boot at the
 // bottom runs only in a browser. Later stages hook in at the EXTENSION POINT comments.
-import { loadRoute } from './route.js';
-import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_SENTENCE, HELP_SPEECH, REASK_HOSPITAL_SPEECH } from './clips.js';
+import { loadRoute, OUTDOOR_STAGES } from './route.js';
+import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_SENTENCE, HELP_SPEECH, REASK_HOSPITAL_SPEECH, alertSentences } from './clips.js';
 import { loadState, saveState } from './storage.js';
 import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking } from './voice.js';
 import { createListener } from './listen.js';
@@ -12,11 +12,14 @@ import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
 import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
+import { loadFloor, renderFloorMap, floorFocus } from './floor.js';
 import { fetchArrival, locationText, REFRESH_MS } from './arrival.js';
 import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
-const STAGE_LABEL = { prepare: '1단계 방문 준비', travel: '2단계 이동 안내', indoor: '3단계 병원 안' };
+export const STAGE_LABEL = {
+  prepare: '1단계 방문 준비', travel: '2단계 이동 안내', indoor: '3단계 병원 안', return: '4단계 돌아가기',
+};
 const CLIP_TEXT = Object.fromEntries(FIXED_CLIPS.map((c) => [c.clipId, c.text]));
 const SIGN_FALLBACK = '표지판을 따라가세요. 어려우면 직원에게 물어보세요.';
 const STEP_CLIP = {
@@ -26,13 +29,26 @@ const STEP_CLIP = {
 // On-screen sentence of the two wizard screens whose spoken clip is too long for three lines of 36px.
 const STEP_SCREEN_TEXT = { confirm: '이렇게 가시는 게 맞나요?', checklist: '신분증과 진료의뢰서를 챙기세요.' };
 const BUS_NOTE = '버스 안 안내 방송과 화면에 나오는 정류장 이름을 확인하세요. 잘 모르시겠으면 기사님께 물어보세요.';
-const ARRIVED_TEXT = '안내를 모두 마쳤습니다.';
+export const ARRIVED_TEXT = '미금역에 도착했어요. 안내를 모두 마쳤습니다.';
+export const TODAY_ORDER_TITLE = '오늘 순서';
+export const DEMO_NOTE = '시연용 예시 일정이에요. 실제 검사와 순서는 사람마다 달라요.';
 // Get-off alert texts (the spoken versions are the alert-* clips in clips.js).
 const ALERT_BUTTON = '내릴 곳 가까워지면 알려 주기';
 const ALERT_EXPLAIN = '위치 확인을 허락하시면 내리실 정류장에 가까워질 때 소리와 진동으로 알려 드려요.';
 const ALERT_SIM_NOTE = '시뮬레이션: 버스가 움직이는 것처럼 보여 드려요';
 const ALERT_WAITING = '알림 켜짐: 내리실 정류장을 기다리는 중';
-const ALERT_BANNER = { early: CLIP_TEXT['alert-early'], near: CLIP_TEXT['alert-near'], now: '이번 정류장에서 내리세요.' };
+const ALERT_NOW_BANNER = '이번 정류장에서 내리세요.';
+// Alert sentences of a point: from its own busRoute stops; the fixed outbound clips as a fallback.
+const FALLBACK_ALERTS = {
+  early: { clipId: 'alert-early', text: CLIP_TEXT['alert-early'] },
+  near: { clipId: 'alert-near', text: CLIP_TEXT['alert-near'] },
+  now: { clipId: 'alert-now', text: CLIP_TEXT['alert-now'] },
+};
+const alertsFor = (p) => alertSentences(p) || FALLBACK_ALERTS;
+/** Banner text for an alert level of this point: the spoken sentence, except "now", which is short. */
+export function alertBannerText(p, level) {
+  return level === 'now' ? ALERT_NOW_BANNER : alertsFor(p)[level].text;
+}
 const ALERT_OFF_TEXT = '위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.';
 const ALERT_VIBRATION = [400, 200, 400];
 // Items shown on the "what to bring" screen when data/support.json is missing.
@@ -70,9 +86,16 @@ export function screenOf(state, route) {
   return state.index < 0 ? 'prepare' : route.points[state.index].stage;
 }
 
-/** Header progress: "cur / total". On the wizard the four questions count; later screens are 4 / 4. */
+/**
+ * Header progress: "cur / total", counted inside the current stage. On the wizard the four
+ * questions count; on the route it is the position among the points of the same stage.
+ */
 export function progressOf(state, route) {
-  if (state.index >= 0) return { cur: route.points[state.index].order, total: route.points.length };
+  if (state.index >= 0) {
+    const here = route.points[state.index];
+    const inStage = route.points.filter((q) => q.stage === here.stage);
+    return { cur: inStage.findIndex((q) => q.id === here.id) + 1, total: inStage.length };
+  }
   const i = QUESTION_STEPS.indexOf(state.prepStep);
   return { cur: i < 0 ? QUESTION_STEPS.length : i + 1, total: QUESTION_STEPS.length };
 }
@@ -90,9 +113,22 @@ export function barPrimary(state, route) {
     if (state.prepStep === 'confirm') return { label: '→ 길 안내 시작', visible: true, action: 'next' };
     return { label: '→ 챙겼어요', visible: true, action: 'start' };
   }
-  if (state.arrived) return { label: '직원에게 보여주기', visible: true, action: 'show' };
+  if (state.arrived) return { label: '처음 화면으로', visible: true, action: 'restart' };
   const p = route.points[state.index];
   return { label: `→ ${p.confirmLabel || '여기에 도착했어요'}`, visible: true, action: 'confirm' };
+}
+
+/** The nearest point at or before `index` that has a boardCoord (where the current bus was boarded). */
+export function boardPointFor(route, index) {
+  for (let i = Math.min(index, route.points.length - 1); i >= 0; i -= 1) {
+    if (route.points[i].boardCoord) return route.points[i];
+  }
+  return null;
+}
+
+/** On-screen sentences of the indoor points, in order (the "오늘 순서" list). */
+export function indoorOrder(route) {
+  return route.points.filter((q) => q.stage === 'indoor').map((q) => q.display);
 }
 
 /** Index to resume at: the point after the last confirmed one, or null when there is none. */
@@ -250,7 +286,7 @@ let booted = false;
 
 // ---------------------------------------------------------------- app
 
-function boot(route, support) {
+function boot(route, support, floor = null) {
   booted = true;
   const $ = (id) => document.getElementById(id);
   const stored = loadState(route.points.map((p) => p.id));
@@ -341,7 +377,8 @@ function boot(route, support) {
     stopAlight();
     alightPointId = p.id;
     alightFailed = false;
-    const board = route.points.find((q) => q.boardCoord);
+    // The board point is the nearest one before this stop, so the return leg uses R2, not O2.
+    const board = boardPointFor(route, route.points.findIndex((q) => q.id === p.id));
     let source = null;
     if (settings.sim && p.busRoute) {
       // Ride along the real stop sequence, standing ~8 s at each stop in between.
@@ -360,8 +397,8 @@ function boot(route, support) {
       onLevel: (level) => {
         if (alightPointId !== p.id) return;
         alightLevel = level;
-        const id = `alert-${level}`;
-        say(id, CLIP_TEXT[id]);
+        const clip = alertsFor(p)[level];
+        say(clip.clipId, clip.text);
         vibrate(ALERT_VIBRATION);
         render();
       },
@@ -382,7 +419,7 @@ function boot(route, support) {
     // Children go through h(), which skips null; a raw DOM append() would print "null" as text.
     const kids = [];
     if (alightStop && alightLevel !== 'far') {
-      kids.push(h('p', { class: `alight-banner ${alightLevel}`, id: 'alight-banner', role: 'alert' }, ALERT_BANNER[alightLevel]));
+      kids.push(h('p', { class: `alight-banner ${alightLevel}`, id: 'alight-banner', role: 'alert' }, alertBannerText(p, alightLevel)));
     } else if (alightStop) {
       kids.push(h('p', { class: 'alight-status', id: 'alight-status', role: 'status' }, ALERT_WAITING));
     }
@@ -424,7 +461,7 @@ function boot(route, support) {
     const load = async () => {
       const parsed = await fetchArrival(ARRIVAL_URL, wanted.arrival);
       if (token !== arrivalToken) return;
-      const text = locationText(parsed, wanted.arrival.routeName);
+      const text = locationText(parsed, wanted.arrival.routeName, Boolean(wanted.hours));
       if (text !== arrivalMsg) {
         arrivalMsg = text;
         render();
@@ -453,7 +490,8 @@ function boot(route, support) {
   function sayCurrent() {
     const p = currentPoint();
     if (!p) return sayStep();
-    if (state.arrived) return speakThen(say('arrive-main', CLIP_TEXT['arrive-main']), () => say('arrive-show', CLIP_TEXT['arrive-show']));
+    // The finish screen has no "show this to staff" step any more, so only the closing clip plays.
+    if (state.arrived) return say('arrive-main', CLIP_TEXT['arrive-main']);
     return say(p.id, p.speech);
   }
 
@@ -623,10 +661,11 @@ function boot(route, support) {
       );
     }
     d.append(row('상태', p.checkedOn ? `${p.status} (${p.checkedOn})` : p.status), row('출처', p.source));
-    if (p.id === route.points[route.points.length - 1].id) {
-      const ol = h('ol', { class: 'summary', id: 'arrival-summary' });
-      route.points.filter((q) => q.stage === 'indoor').forEach((q) => ol.append(h('li', {}, q.display)));
-      d.append(h('p', { class: 'setting-title' }, '병원 안 순서'), ol);
+    const firstIndoor = route.points.find((q) => q.stage === 'indoor');
+    if (firstIndoor && p.id === firstIndoor.id) {
+      const ol = h('ol', { class: 'summary', id: 'today-order' });
+      indoorOrder(route).forEach((text) => ol.append(h('li', {}, text)));
+      d.append(h('p', { class: 'setting-title' }, TODAY_ORDER_TITLE), h('p', { id: 'demo-note' }, DEMO_NOTE), ol);
     }
     return d;
   }
@@ -642,7 +681,7 @@ function boot(route, support) {
     }
     const p = route.points[state.index];
     const next = route.points[state.index + 1];
-    if (p.stage === 'travel' && next && p.coord && next.coord && heading !== null) {
+    if (OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord && heading !== null) {
       return { angle: arrowAngle(bearingDeg(p.coord, next.coord), heading) };
     }
     return null;
@@ -653,7 +692,7 @@ function boot(route, support) {
     if (settings.sim || state.index < 0) return false;
     const p = route.points[state.index];
     const next = route.points[state.index + 1];
-    return Boolean(p.stage === 'travel' && next && p.coord && next.coord);
+    return Boolean(OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord);
   }
 
   function mountArrow(holder, angle) {
@@ -687,7 +726,15 @@ function boot(route, support) {
     if (info && arrowCtl) arrowCtl.setAngle(info.angle);
   }
 
+  /** Simulation mode, indoor point: the floor schematic stands in for the outdoor mini map. */
+  function floorPanel() {
+    const { current, next } = floorFocus(route, state.index);
+    return h('div', { class: 'card', id: 'sim-panel' }, svgNode(renderFloorMap(floor, current, next)));
+  }
+
   function simPanel() {
+    const here = currentPoint();
+    if (floor && here && here.stage === 'indoor' && here.floor === floor.id) return floorPanel();
     const box = h('div', { class: 'card', id: 'sim-panel' }, renderMiniMap(route, state.index),
       h('p', { class: 'muted' }, MAP_NOTE));
     if (simArrow(route, state.index, sim.heading)) {
@@ -795,6 +842,10 @@ function boot(route, support) {
       if (arrivalMsg && p.arrival) main.append(arrivalPanel());
       if (p.alertCoord) main.append(alightPanel(p));
       main.append(pictureBox(p, Boolean(p.alertCoord)));
+      // Real mode: only the hospital's own number, no map, arrow or positioning.
+      if (!settings.sim && p.stage === 'indoor' && Number.isInteger(p.facility)) {
+        main.append(h('p', { class: 'floor-ref', id: 'floor-ref' }, `병원 층별 안내 ${p.facility}번`));
+      }
       if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK));
       if (arrowCouldDraw() && heading === null) {
         main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onCompass }, '방향 센서 켜기'));
@@ -811,12 +862,6 @@ function boot(route, support) {
         dispatch({ type: 'PREV' });
         sayCurrent();
       } }, prevLabel));
-    if (arrivedHere) {
-      row2.append(h('button', { class: 'btn small ghost', id: 'btn-restart', onclick: () => {
-        dispatch({ type: 'RESTART' });
-        sayCurrent();
-      } }, '처음 화면으로'));
-    }
     links.append(row2);
     main.append(links);
     return main;
@@ -919,7 +964,7 @@ function boot(route, support) {
     const prog = progressOf(state, route);
     $('stage-pill').textContent = STAGE_LABEL[screen];
     $('progress').textContent = `${prog.cur} / ${prog.total}`;
-    $('progress').setAttribute('aria-label', `${prog.total}단계 중 ${prog.cur}단계`);
+    $('progress').setAttribute('aria-label', `이 단계 ${prog.total}개 중 ${prog.cur}번째`);
     renderDots(prog.cur, prog.total);
     if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
     else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
@@ -968,10 +1013,9 @@ function boot(route, support) {
       chime(settings);
       dispatch({ type: 'START' });
       sayCurrent();
-    } else if (action === 'show') {
-      openerSel = '#btn-primary';
-      dispatch({ type: 'OPEN_HELP' });
-      say('help-main', HELP_SPEECH);
+    } else if (action === 'restart') {
+      dispatch({ type: 'RESTART' });
+      sayCurrent();
     } else if (action === 'confirm') {
       chime(settings);
       vibrate(80);
@@ -1071,7 +1115,14 @@ async function start() {
     return;
   }
   const support = await loadSupport();
-  boot(route, support);
+  // The floor schematic is optional: without it indoor screens work, only the map is missing.
+  let floor = null;
+  try {
+    floor = await loadFloor('data/floor.snubh-1dong-1f.json');
+  } catch {
+    floor = null;
+  }
+  boot(route, support, floor);
 }
 
 if (typeof document !== 'undefined') start();

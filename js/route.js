@@ -1,7 +1,9 @@
 // Route schema validation and loading. Pure, importable in Node (no DOM access).
 
-const STAGES = ['travel', 'indoor'];
+const STAGES = ['travel', 'indoor', 'return'];
 const KINDS = ['walk', 'bus', 'indoor'];
+// Stages that happen outdoors on foot or by bus; the get-off arrows and board lookups treat them alike.
+export const OUTDOOR_STAGES = Object.freeze(['travel', 'return']);
 const STATUSES = ['현장 미확인', '현장 확인'];
 const STRING_FIELDS = ['id', 'display', 'speech', 'confirmLabel', 'source'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -43,7 +45,14 @@ export function validateRoute(obj) {
       if ((p.stage === 'indoor') !== (p.kind === 'indoor')) {
         errors.push(`${tag}: stage ${p.stage} does not match kind ${p.kind}`);
       }
+      // travel and return are the outdoor stages: walk or bus only (indoor is caught above)
     }
+    if (p.facility !== undefined && !(Number.isInteger(p.facility) && p.facility > 0)) {
+      errors.push(`${tag}.facility must be a positive integer`);
+    }
+    if (p.floor !== undefined && !isNonEmptyString(p.floor)) errors.push(`${tag}.floor must be a non-empty string`);
+    if (p.facility !== undefined && p.floor === undefined) errors.push(`${tag}: facility needs a floor`);
+    if (p.wait !== undefined && typeof p.wait !== 'boolean') errors.push(`${tag}.wait must be a boolean`);
     if (p.order !== i + 1) errors.push(`${tag}.order must be ${i + 1}`);
     if (typeof p.detail !== 'string') errors.push(`${tag}.detail must be a string (may be empty)`);
     if (p.sign !== null && !isNonEmptyString(p.sign)) errors.push(`${tag}.sign must be a string or null`);
