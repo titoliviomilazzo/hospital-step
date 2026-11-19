@@ -198,7 +198,8 @@ details.more[open] > summary { margin-bottom: 12px; }
 .arrow-holder canvas { display: block; aspect-ratio: 1 / 1; width: min(280px, 100%); height: auto; }
 .arrow-svg { width: min(280px, 100%); height: auto; }
 /* Floor schematic (simulation mode, indoor points) and the real-mode facility number line. */
-.floor-map { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
+.floor-map { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; min-width: 0; }
+#sim-panel:has(.floor-map) { padding: 8px 12px; min-width: 0; overflow: hidden; } /* more room for the plan on a 375 px phone */
 .floor-svg { display: block; width: 100%; height: auto; max-width: 100%; }
 .floor-now, .floor-next { margin: 0; font-size: 28px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
 .floor-caption { margin: 0; font-size: 20px; font-weight: 700; color: var(--muted); overflow-wrap: anywhere; }

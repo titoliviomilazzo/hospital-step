@@ -6,13 +6,13 @@ import { loadState, saveState } from './storage.js';
 import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking } from './voice.js';
 import { createListener } from './listen.js';
 import { parseVisit, expandAbbreviations } from './intent.js';
-import { arrowAngle, bearingDeg, startCompass } from './compass.js';
+import { arrowAngle, bearingDeg, startCompass, quantiseHeading } from './compass.js';
 import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
 import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
-import { loadFloor, renderFloorMap, floorFocus } from './floor.js';
+import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './floor.js';
 import { fetchArrival, locationText, REFRESH_MS } from './arrival.js';
 import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
 
@@ -310,6 +310,8 @@ function boot(route, support, floor = null) {
   let heading = null;
   let compassMsg = null;
   let stopCompass = null;
+  let floorStep = null; // steady heading (multiple of 15) the floor map is drawn with; null = north up
+  let floorHost = null; // the element that holds the floor figure currently on screen
   let sim = initialSim();
   let arrowCtl = null; // {setAngle(deg)} of the arrow currently on screen
   let arrowToken = 0;
@@ -726,10 +728,59 @@ function boot(route, support, floor = null) {
     if (info && arrowCtl) arrowCtl.setAngle(info.angle);
   }
 
-  /** Simulation mode, indoor point: the floor schematic stands in for the outdoor mini map. */
+  /**
+   * Keeps `floorStep` (the steady, 15-degree heading the floor map is drawn with) up to date from its
+   * source: the simulation slider in simulation mode, the device compass reading (`heading`, set by
+   * onCompass) in real mode. null means no heading is known, so the map stays north up.
+   * Returns true when the step changed, which is the only time the map is redrawn.
+   */
+  function syncFloorStep() {
+    const raw = settings.sim ? sim.heading : heading;
+    const nextStep = raw === null ? null : quantiseHeading(raw, floorStep);
+    const changed = nextStep !== floorStep;
+    floorStep = nextStep;
+    return changed;
+  }
+
+  /** Redraws only the floor figure (no full render, so the page does not jump back to the top). */
+  function redrawFloor() {
+    const p = currentPoint();
+    if (!floorHost || !floorHost.isConnected || !showsFloorMap(p)) return;
+    const { current, next } = floorFocus(route, state.index);
+    floorHost.replaceChildren(svgNode(renderFloorMap(floor, current, next, route, { headingDeg: floorStep })));
+  }
+
+  /**
+   * Indoor point: the floor plan, turned to the direction the user faces. Simulation mode adds the
+   * heading slider; real mode adds the note that indoor compass readings can be off.
+   */
   function floorPanel() {
     const { current, next } = floorFocus(route, state.index);
-    return h('div', { class: 'card', id: 'sim-panel' }, svgNode(renderFloorMap(floor, current, next)));
+    syncFloorStep();
+    floorHost = h('div', { class: 'floor-host' },
+      svgNode(renderFloorMap(floor, current, next, route, { headingDeg: floorStep })));
+    const box = h('div', { class: 'card', id: 'sim-panel' }, floorHost);
+    if (settings.sim) {
+      const readout = h('output', { id: 'heading-readout', for: 'heading-slider' }, `${sim.heading}도`);
+      box.append(
+        h('label', { for: 'heading-slider', class: 'setting-title' }, '내가 바라보는 방향 (0도는 북쪽, 90도는 동쪽)'),
+        h('input', { type: 'range', id: 'heading-slider', min: 0, max: HEADING_MAX, step: 1, value: sim.heading,
+          oninput: (e) => {
+            sim = simReducer(sim, { type: 'SET_HEADING', value: e.target.value });
+            readout.textContent = `${sim.heading}도`;
+            if (syncFloorStep()) redrawFloor();
+          } }),
+        readout,
+      );
+    } else {
+      box.append(h('p', { class: 'note', id: 'floor-bearing-note' }, FLOOR_BEARING_NOTE));
+    }
+    return box;
+  }
+
+  /** True when the floor plan applies: an indoor point of the loaded floor (both modes). */
+  function showsFloorMap(p) {
+    return Boolean(floor && p && p.stage === 'indoor' && p.floor === floor.id);
   }
 
   function simPanel() {
@@ -761,7 +812,11 @@ function boot(route, support, floor = null) {
         const first = heading === null;
         heading = hd;
         if (first) render();
-        else refreshArrow();
+        else {
+          refreshArrow();
+          // The map redraws only when the 15-degree step changes (see quantiseHeading).
+          if (!settings.sim && syncFloorStep()) redrawFloor();
+        }
       },
       (reason) => {
         compassMsg = reason === 'denied'
@@ -841,19 +896,26 @@ function boot(route, support, floor = null) {
       // The get-off alert panel sits right under the instruction so its button never needs scrolling.
       if (arrivalMsg && p.arrival) main.append(arrivalPanel());
       if (p.alertCoord) main.append(alightPanel(p));
-      main.append(pictureBox(p, Boolean(p.alertCoord)));
-      // Real mode: only the hospital's own number, no map, arrow or positioning.
+      // Indoor (both modes): the floor plan comes first so it is visible without scrolling, and the
+      // picture below it shrinks to the compact size.
+      const planFirst = showsFloorMap(p);
+      if (planFirst) main.append(floorPanel());
+      main.append(pictureBox(p, Boolean(p.alertCoord) || planFirst));
+      // Real mode: the hospital's own number as well. No live position is ever claimed.
       if (!settings.sim && p.stage === 'indoor' && Number.isInteger(p.facility)) {
         main.append(h('p', { class: 'floor-ref', id: 'floor-ref' }, `병원 층별 안내 ${p.facility}번`));
       }
       if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK));
-      if (arrowCouldDraw() && heading === null) {
+      const floorTurns = !settings.sim && planFirst;
+      if ((arrowCouldDraw() || floorTurns) && heading === null) {
         main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onCompass }, '방향 센서 켜기'));
+        if (floorTurns) main.append(h('p', { class: 'note', id: 'compass-hint' }, '방향 센서를 켜면 지도가 바라보는 쪽으로 돌아가요.'));
       }
-      if (compassMsg && !settings.sim) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
+      // On the floor map a refused or missing compass is not an error: the map just stays north up.
+      if (compassMsg && !settings.sim && !planFirst) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
       if (p.gap) main.append(h('p', { class: 'warn', id: 'gap-warning', role: 'note' }, '이 구간은 끊어진 곳이 있어요. 우회하거나 직원에게 물어보세요.'));
     }
-    if (settings.sim && !arrivedHere) main.append(simPanel(p));
+    if (settings.sim && !arrivedHere && !showsFloorMap(p)) main.append(simPanel(p));
 
     const links = h('div', { class: 'bottom-links' }, pointDetails(p));
     const prevLabel = p.stage === 'indoor' ? '이전 지점으로 돌아가기' : (state.index === 0 ? '처음 화면으로' : '이전 지점으로');

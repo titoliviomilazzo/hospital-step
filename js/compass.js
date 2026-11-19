@@ -28,6 +28,30 @@ export function arrowAngle(bearing, heading) {
   return norm360(bearing - heading + 360);
 }
 
+export const HEADING_STEP_DEG = 15;
+// A step is kept until the raw heading is more than 12.5 degrees away from it: half a step (7.5, the
+// plain rounding boundary) plus 5 degrees of hysteresis, so a reading that wobbles around a boundary
+// never flips the picture back and forth.
+export const HEADING_HOLD_DEG = HEADING_STEP_DEG / 2 + 5;
+
+/**
+ * Steady heading for the turning floor map: `raw` snapped to a multiple of 15 degrees with hysteresis.
+ * `prevStep` is the step in use (null/undefined at the start). While the raw heading is within
+ * 12.5 degrees of `prevStep` the same step is returned; beyond that it moves to the nearest multiple
+ * of 15. Result is in [0, 360); a non-finite `raw` keeps `prevStep` (or 0).
+ */
+export function quantiseHeading(raw, prevStep = null) {
+  const hasPrev = Number.isFinite(prevStep);
+  if (!Number.isFinite(raw)) return hasPrev ? norm360(prevStep) : 0;
+  const r = norm360(raw);
+  if (hasPrev) {
+    const prev = norm360(prevStep);
+    const diff = Math.abs(((r - prev + 540) % 360) - 180); // shortest angular distance
+    if (diff <= HEADING_HOLD_DEG) return prev;
+  }
+  return norm360(Math.round(r / HEADING_STEP_DEG) * HEADING_STEP_DEG);
+}
+
 /**
  * Compass heading from a DeviceOrientationEvent, or null when it is not a real compass reading.
  * iOS gives `webkitCompassHeading`; elsewhere `alpha` is a compass value only when `absolute`.
