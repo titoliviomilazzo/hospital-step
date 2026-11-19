@@ -66,7 +66,8 @@ export const FIXED_CLIPS = [
   { clipId: 'arrive-show', text: '직원에게 이 화면을 보여 주세요.' },
   // Get-off alert on the bus screen (location is used only while the alert is on).
   { clipId: 'alert-intro', text: '위치 확인을 허락하시면, 내리실 정류장에 가까워질 때 알려 드릴게요.' },
-  { clipId: 'alert-near', text: '곧 내리실 정류장입니다. 하차 벨을 눌러 주세요.' },
+  { clipId: 'alert-early', text: '여기는 서울대학교병원 정류장이에요. 아직 내리지 마세요. 다음 정류장에서 내리세요.' },
+  { clipId: 'alert-near', text: '다음 정류장, 서울대병원에서 내려요. 하차 벨을 눌러 주세요.' },
   { clipId: 'alert-now', text: '이번 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.' },
   { clipId: 'alert-off', text: '위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.' },
 ];

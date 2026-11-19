@@ -35,7 +35,7 @@
       }
     },
     "O3": {
-      "text": "서울대병원 정류장, 분당서울대학교병원 앞에서 내리세요. 서두르지 마시고 천천히 내리세요.",
+      "text": "서울대학교병원 정류장에서는 내리지 마시고, 그다음 서울대병원 정류장에서 내리세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
@@ -275,7 +275,7 @@
       }
     },
     "alert-near": {
-      "text": "곧 내리실 정류장입니다. 하차 벨을 눌러 주세요.",
+      "text": "다음 정류장, 서울대병원에서 내려요. 하차 벨을 눌러 주세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
@@ -292,6 +292,22 @@
     },
     "alert-off": {
       "text": "위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "O3-detail": {
+      "text": "타는 곳에서 세 번째 정류장이에요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "alert-early": {
+      "text": "여기는 서울대학교병원 정류장이에요. 아직 내리지 마세요. 다음 정류장에서 내리세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",

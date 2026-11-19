@@ -65,6 +65,24 @@ export function validateRoute(obj) {
         isNonEmptyString(c.source) && STATUSES.includes(c.status);
       if (!ok) errors.push(`${tag}.${key} must be {lat, lon, source, status}`);
     }
+    if (p.hours !== undefined && !isNonEmptyString(p.hours)) errors.push(`${tag}.hours must be a non-empty string`);
+    if (p.arrival !== undefined) {
+      const a = p.arrival;
+      if (!a || !isFiniteNumber(a.stationId) || !isFiniteNumber(a.routeId) || !isNonEmptyString(a.routeName) ||
+        !Number.isInteger(a.loopStops) || a.loopStops < 1 || !Number.isInteger(a.boardSeq) || a.boardSeq < 1 || a.boardSeq > a.loopStops) {
+        errors.push(`${tag}.arrival must be {stationId, routeId, routeName, loopStops, boardSeq} with 1 <= boardSeq <= loopStops`);
+      }
+    }
+    if (p.busRoute !== undefined) {
+      const b = p.busRoute;
+      const stopOk = (st) => st && Number.isInteger(st.seq) && isFiniteNumber(st.id) && isNonEmptyString(st.name) &&
+        isFiniteNumber(st.lat) && isFiniteNumber(st.lon) && st.lat >= -90 && st.lat <= 90 && st.lon >= -180 && st.lon <= 180;
+      const ok = b && isNonEmptyString(b.routeName) && isFiniteNumber(b.routeId) && isNonEmptyString(b.source) &&
+        Array.isArray(b.stops) && b.stops.length >= 2 && b.stops.every(stopOk) &&
+        b.stops.every((st, i) => i === 0 || st.seq > b.stops[i - 1].seq) &&
+        b.stops.some((st) => st.seq === b.alightSeq);
+      if (!ok) errors.push(`${tag}.busRoute must have routeName, routeId, source, ordered stops and an alightSeq that is one of them`);
+    }
     if (!p.sim || !isFiniteNumber(p.sim.x) || !isFiniteNumber(p.sim.y)) {
       errors.push(`${tag}.sim must be {x, y} numbers`);
     }

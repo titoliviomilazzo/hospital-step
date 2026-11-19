@@ -11,8 +11,9 @@ import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
 import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
-import { startAlightWatch, simulatedSource } from './alight.js';
-import { WEBHOOK_URL } from '../config.js';
+import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
+import { fetchArrival, locationText, REFRESH_MS } from './arrival.js';
+import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
 const STAGE_LABEL = { prepare: '1단계 방문 준비', travel: '2단계 이동 안내', indoor: '3단계 병원 안' };
@@ -31,7 +32,7 @@ const ALERT_BUTTON = '내릴 곳 가까워지면 알려 주기';
 const ALERT_EXPLAIN = '위치 확인을 허락하시면 내리실 정류장에 가까워질 때 소리와 진동으로 알려 드려요.';
 const ALERT_SIM_NOTE = '시뮬레이션: 버스가 움직이는 것처럼 보여 드려요';
 const ALERT_WAITING = '알림 켜짐: 내리실 정류장을 기다리는 중';
-const ALERT_BANNER = { near: '곧 내리실 정류장입니다. 하차 벨을 눌러 주세요.', now: '이번 정류장에서 내리세요.' };
+const ALERT_BANNER = { early: CLIP_TEXT['alert-early'], near: CLIP_TEXT['alert-near'], now: '이번 정류장에서 내리세요.' };
 const ALERT_OFF_TEXT = '위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.';
 const ALERT_VIBRATION = [400, 200, 400];
 // Items shown on the "what to bring" screen when data/support.json is missing.
@@ -284,6 +285,12 @@ function boot(route, support) {
   let alightLevel = 'far'; // 'far' | 'near' | 'now'
   let alightFailed = false; // permission denied or no position available
 
+  // Bus arrival info on a point that has `arrival` (only when ARRIVAL_URL is configured).
+  let arrivalPointId = null;
+  let arrivalTimer = null;
+  let arrivalToken = 0;
+  let arrivalMsg = null;
+
   const say = (clipId, text) => speak(clipId, text, settings);
   preloadManifest();
   const persist = () => saveState({ settings, lastPointId: state.lastPointId });
@@ -335,10 +342,20 @@ function boot(route, support) {
     alightPointId = p.id;
     alightFailed = false;
     const board = route.points.find((q) => q.boardCoord);
-    const source = settings.sim && board ? simulatedSource(board.boardCoord, p.alertCoord) : null;
+    let source = null;
+    if (settings.sim && p.busRoute) {
+      // Ride along the real stop sequence, standing ~8 s at each stop in between.
+      const stops = p.busRoute.stops.filter((st) => st.seq <= p.busRoute.alightSeq);
+      const dwell = {};
+      for (let i = 1; i < stops.length - 1; i += 1) dwell[i] = 8;
+      source = simulatedRouteSource(stops, { durationMs: 24000, intervalMs: 1000, dwell });
+    } else if (settings.sim && board) {
+      source = simulatedSource(board.boardCoord, p.alertCoord);
+    }
     say('alert-intro', CLIP_TEXT['alert-intro']);
     const ctl = startAlightWatch({
       target: p.alertCoord,
+      busRoute: p.busRoute || null,
       source,
       onLevel: (level) => {
         if (alightPointId !== p.id) return;
@@ -383,6 +400,44 @@ function boot(route, support) {
       );
     }
     return h('div', { class: 'card alight', id: 'alight-panel' }, kids);
+  }
+
+  function stopArrival() {
+    if (arrivalTimer !== null) clearInterval(arrivalTimer);
+    arrivalTimer = null;
+    arrivalPointId = null;
+    arrivalToken += 1;
+    arrivalMsg = null;
+  }
+
+  /** Starts the 30 s refresh on a point with `arrival`; ends it on any other screen. */
+  function syncArrival(p) {
+    const wanted = ARRIVAL_URL && p && p.arrival && !state.arrived ? p : null;
+    if (!wanted) {
+      if (arrivalPointId !== null) stopArrival();
+      return;
+    }
+    if (arrivalPointId === wanted.id) return;
+    stopArrival();
+    arrivalPointId = wanted.id;
+    const token = arrivalToken;
+    const load = async () => {
+      const parsed = await fetchArrival(ARRIVAL_URL, wanted.arrival);
+      if (token !== arrivalToken) return;
+      const text = locationText(parsed, wanted.arrival.routeName);
+      if (text !== arrivalMsg) {
+        arrivalMsg = text;
+        render();
+      }
+    };
+    arrivalMsg = '버스 위치를 확인하는 중이에요...';
+    load();
+    arrivalTimer = setInterval(load, REFRESH_MS);
+  }
+
+  function arrivalPanel() {
+    return h('div', { class: 'card arrival', id: 'arrival-panel', role: 'status' },
+      h('p', { class: 'arrival-text' }, arrivalMsg));
   }
 
   function currentPoint() {
@@ -560,6 +615,7 @@ function boot(route, support) {
   function pointDetails(p) {
     const d = h('details', { class: 'more' }, h('summary', {}, '자세히'));
     if (p.sign) d.append(row('찾을 표지판', p.sign));
+    if (p.hours) d.append(row('운행 시간', p.hours));
     if (p.detail) {
       d.append(
         h('p', {}, p.detail),
@@ -736,6 +792,7 @@ function boot(route, support) {
       main.append(h('div', { class: 'picto-box done', id: 'arrow-box' }, svgNode(doneSvg())));
     } else {
       // The get-off alert panel sits right under the instruction so its button never needs scrolling.
+      if (arrivalMsg && p.arrival) main.append(arrivalPanel());
       if (p.alertCoord) main.append(alightPanel(p));
       main.append(pictureBox(p, Boolean(p.alertCoord)));
       if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK));
@@ -867,6 +924,7 @@ function boot(route, support) {
     if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
     else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
 
+    syncArrival(p);
     disposeArrow3d();
     arrowCtl = null;
     arrowToken += 1;

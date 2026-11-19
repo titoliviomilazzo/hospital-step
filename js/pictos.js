@@ -85,7 +85,8 @@ export function pictoSpec(point) {
   const display = String(point.display || '');
   if (point.kind === 'bus' && point.busNumber) return { kind: 'bus', label: point.busNumber };
   if (point.kind === 'bus') {
-    const m = /^(.+?정류장)/.exec(display);
+    // The stop to get off at is the one right before "에서" ("A 정류장 다음, B 정류장(설명)에서 내리세요").
+    const m = /(\S+ 정류장)(?:\([^)]*\))?에서/.exec(display) || /^(.+?정류장)/.exec(display);
     return { kind: 'busstop', label: m ? m[1] : null };
   }
   if (point.kind === 'walk') {
