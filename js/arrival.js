@@ -49,16 +49,37 @@ export function parseLocations(reply, { loopStops, boardSeq } = {}) {
   return best === null ? null : { stopsAway: best };
 }
 
+/**
+ * The point whose `arrival` config (and `hours`) the screen at `index` uses: the point itself when it
+ * has `arrival`; else, when it has a walking `target` (the way to a bus stop), the NEXT point if that
+ * has `arrival` (O1 -> O2, R1 -> R2); else null.
+ */
+export function arrivalPointFor(route, index) {
+  const p = route && route.points && route.points[index];
+  if (!p) return null;
+  if (p.arrival) return p;
+  const next = route.points[index + 1];
+  return p.target && next && next.arrival ? next : null;
+}
+
+/** Stop name for the wording on a walking point: `target.name` ending in " 정류장" (never doubled). */
+export function stopLabel(target) {
+  if (!target || typeof target.name !== 'string' || !target.name.trim()) return null;
+  const n = target.name.trim();
+  return n.endsWith('정류장') ? n : `${n} 정류장`;
+}
+
 /** The sentence to show for a parse result. No minutes are promised. `hasHours`: the point has `hours` data. */
-export function locationText(parsed, routeName = '7-1', hasHours = true) {
+export function locationText(parsed, routeName = '7-1', hasHours = true, stopName = null) {
   if (!parsed) {
     // The stop-1 hours sentence is only true for the first stop; a point without `hours` data says less.
     return hasHours
       ? `지금은 ${routeName}번 버스 위치 정보가 없어요. 평일 아침 7시 13분부터 저녁 7시까지 다녀요.`
       : `지금은 ${routeName}번 버스 위치 정보가 없어요.`;
   }
-  if (parsed.near) return `${routeName}번 버스가 이 정류장 근처에 있어요`;
-  if (parsed.stopsAway <= 0) return `${routeName}번 버스가 지금 정류장에 와 있어요`;
+  // On a walking point (stopName given) "this stop" would read as the user's own place, so name the stop.
+  if (parsed.near) return `${routeName}번 버스가 ${stopName || '이 정류장'} 근처에 있어요`;
+  if (parsed.stopsAway <= 0) return `${routeName}번 버스가 ${stopName ? `${stopName}에` : '지금 정류장에'} 와 있어요`;
   if (parsed.stopsAway === 1) return `${routeName}번 버스가 바로 전 정류장에 있어요`;
   return `${routeName}번 버스가 ${parsed.stopsAway}정거장 전에 있어요`;
 }

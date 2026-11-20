@@ -14,7 +14,7 @@ import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO
 import { POSITION_MSG, createPositionController, navItems, targetAngle, targetCaption } from './navarrow.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
 import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './floor.js';
-import { fetchArrival, locationText, REFRESH_MS } from './arrival.js';
+import { arrivalPointFor, fetchArrival, locationText, REFRESH_MS, stopLabel } from './arrival.js';
 import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
@@ -527,7 +527,8 @@ function boot(route, support, floor = null) {
 
   /** Starts the 30 s refresh on a point with `arrival`; ends it on any other screen. */
   function syncArrival(p) {
-    const wanted = ARRIVAL_URL && p && p.arrival && !state.arrived ? p : null;
+    const src = p && !state.arrived ? arrivalPointFor(route, state.index) : null; // O1/R1 use O2/R2's bus
+    const wanted = ARRIVAL_URL && src ? { id: p.id, arrival: src.arrival, hours: src.hours, stop: p.arrival ? null : stopLabel(p.target) } : null;
     if (!wanted) {
       if (arrivalPointId !== null) stopArrival();
       return;
@@ -539,7 +540,7 @@ function boot(route, support, floor = null) {
     const load = async () => {
       const parsed = await fetchArrival(ARRIVAL_URL, wanted.arrival);
       if (token !== arrivalToken) return;
-      const text = locationText(parsed, wanted.arrival.routeName, Boolean(wanted.hours));
+      const text = locationText(parsed, wanted.arrival.routeName, Boolean(wanted.hours), wanted.stop);
       if (text !== arrivalMsg) {
         arrivalMsg = text;
         // Background refresh: change only the panel text; a full render would close open details.
@@ -1060,6 +1061,7 @@ function boot(route, support, floor = null) {
       main.append(h('div', { class: 'picto-box done', id: 'arrow-box' }, svgNode(doneSvg())));
     } else {
       // The get-off alert panel sits right under the instruction so its button never needs scrolling.
+      // Target points (O1/R1) show it below the arrow block instead, so the arrow stays on top.
       if (arrivalMsg && p.arrival) main.append(arrivalPanel());
       if (p.alertCoord) main.append(alightPanel(p));
       // Indoor (both modes): the floor plan comes first so it is visible without scrolling, and the
@@ -1067,6 +1069,7 @@ function boot(route, support, floor = null) {
       const planFirst = showsFloorMap(p);
       if (planFirst) main.append(floorPanel());
       main.append(pictureBox(p, Boolean(p.alertCoord) || planFirst));
+      if (arrivalMsg && p.target && !p.arrival && arrivalPointFor(route, state.index)) main.append(arrivalPanel());
       // Real mode: the hospital's own number as well. No live position is ever claimed.
       if (!settings.sim && p.stage === 'indoor' && Number.isInteger(p.facility)) {
         main.append(h('p', { class: 'floor-ref', id: 'floor-ref' }, `병원 층별 안내 ${p.facility}번`));
