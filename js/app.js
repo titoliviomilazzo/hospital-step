@@ -11,6 +11,7 @@ import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
 import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
+import { POSITION_MSG, createPositionController, navItems, targetAngle, targetCaption } from './navarrow.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
 import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './floor.js';
 import { fetchArrival, locationText, REFRESH_MS } from './arrival.js';
@@ -366,6 +367,8 @@ function boot(route, support, floor = null) {
   // Arrow state. `heading` is the real compass reading (null until one arrives).
   let heading = null;
   let compassMsg = null;
+  let pos = null; // latest position fix {lat, lon, accuracy}; memory only, never stored or sent
+  let posMsg = null; // why the position is unavailable (denied / unavailable)
   let floorStep = null; // steady heading (multiple of 15) the floor map is drawn with; null = north up
   let floorHost = null; // the element that holds the floor figure currently on screen
   let sim = initialSim();
@@ -600,6 +603,14 @@ function boot(route, support, floor = null) {
     const main = h('div', { class: utterance ? 'stack has-heard' : 'stack' });
     if (utterance) main.append(heardCard());
 
+    const ri = step === 'hospital' ? resumeIndex(state, route) : null;
+    if (ri !== null) {
+      main.append(h('button', { class: 'btn wide', id: 'btn-resume', onclick: () => {
+        dispatch({ type: 'RESUME' });
+        speakThen(say('ui-resume', CLIP_TEXT['ui-resume']), () => sayCurrent());
+      } }, resumeLabel(state, route)));
+    }
+
     const heroKinds = HERO_BY_STEP[step] || [];
     if (heroKinds.length) {
       main.append(h('div', { class: `hero hero-${step}`, id: 'hero' }, heroKinds.map((k) => svgNode(heroSvg(k)))));
@@ -633,13 +644,6 @@ function boot(route, support, floor = null) {
     }
     if (parsing) main.append(h('p', { class: 'note', role: 'status' }, '해석하는 중이에요...'));
 
-    const ri = step === 'hospital' ? resumeIndex(state, route) : null;
-    if (ri !== null) {
-      main.append(h('button', { class: 'btn wide', id: 'btn-resume', onclick: () => {
-        dispatch({ type: 'RESUME' });
-        speakThen(say('ui-resume', CLIP_TEXT['ui-resume']), () => sayCurrent());
-      } }, resumeLabel(state, route)));
-    }
     const footer = wizardFooter();
     if (footer) main.append(footer);
     return main;
@@ -758,6 +762,10 @@ function boot(route, support, floor = null) {
       return a ? { angle: a.angle } : null;
     }
     const p = route.points[state.index];
+    if (p.target) {
+      const a = targetAngle(pos, p.target, heading);
+      return a === null ? null : { angle: a };
+    }
     const next = route.points[state.index + 1];
     if (OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord && heading !== null) {
       return { angle: arrowAngle(bearingDeg(p.coord, next.coord), heading) };
@@ -769,8 +777,30 @@ function boot(route, support, floor = null) {
   function arrowCouldDraw() {
     if (settings.sim || state.index < 0) return false;
     const p = route.points[state.index];
+    if (p.target) return true;
     const next = route.points[state.index + 1];
     return Boolean(OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord);
+  }
+
+  /** The official target of the current point in real mode (an arrow can point at it), else null. */
+  function currentTarget() {
+    if (settings.sim || state.index < 0) return null;
+    return route.points[state.index].target || null;
+  }
+
+  /** Lines under the arrow (distance, accuracy, underground notes) for the current target point. */
+  function navStatusNodes(p) {
+    return navItems({
+      pos, target: p.target, watching: positionCtl.active, posMsg, underground: p.id === 'O1',
+    }).map((x) => h('p', { class: x.main ? 'nav-dist' : 'note' }, x.text));
+  }
+
+  /** Rewrites the status area in place (no full render, so the page does not jump). */
+  function updateNavStatus() {
+    const p = currentPoint();
+    const box = typeof document !== 'undefined' ? document.getElementById('nav-status') : null;
+    if (!p || !p.target || !box) return;
+    box.replaceChildren(...navStatusNodes(p));
   }
 
   function mountArrow(holder, angle) {
@@ -889,6 +919,7 @@ function boot(route, support, floor = null) {
       if (first || hadMsg) render();
       else {
         refreshArrow();
+        updateNavStatus();
         // The map redraws only when the 15-degree step changes (see quantiseHeading).
         if (!settings.sim && syncFloorStep()) redrawFloor();
       }
@@ -905,6 +936,44 @@ function boot(route, support, floor = null) {
     if (compass.starting) return; // a second tap while the permission prompt is open
     compassMsg = null;
     compass.turnOn();
+  }
+
+  const positionCtl = createPositionController({
+    onFix: (fix) => {
+      const first = pos === null;
+      pos = fix;
+      posMsg = null;
+      if (first) render();
+      else {
+        refreshArrow();
+        updateNavStatus();
+      }
+    },
+    onUnavailable: (reason) => {
+      posMsg = POSITION_MSG[reason] || POSITION_MSG.unavailable;
+      pos = null;
+      render();
+    },
+  });
+
+  /** [방향 화살표 켜기]: one tap starts both the compass (iOS asks for permission here) and the position watch. */
+  function onNavArrow() {
+    posMsg = null;
+    compassMsg = null;
+    pos = null;
+    onCompass();
+    positionCtl.turnOff();
+    positionCtl.turnOn();
+    render();
+  }
+
+  /** Ends the position watch when the visible screen has no target arrow. */
+  function syncPosition(p) {
+    const wanted = !settings.sim && p !== null && Boolean(p.target);
+    if (wanted || !(positionCtl.active || pos !== null || posMsg !== null)) return;
+    positionCtl.turnOff();
+    pos = null;
+    posMsg = null;
   }
 
   /** Ends the compass when the visible screen has no use for it, so it can be turned on again later. */
@@ -960,6 +1029,10 @@ function boot(route, support, floor = null) {
   }
 
   /** The picture box: a pictogram by point kind, or the big arrow when one can be drawn. */
+  function navStatusBox(p) {
+    return h('div', { id: 'nav-status', role: 'status' }, ...navStatusNodes(p));
+  }
+
   function pictureBox(p, compact = false) {
     const spec = pictoSpec(p);
     const box = h('div', { class: compact ? 'picto-box compact' : 'picto-box', id: 'arrow-box' });
@@ -969,9 +1042,12 @@ function boot(route, support, floor = null) {
       box.classList.add('arrow-mode');
       box.append(holder);
       mountArrow(holder, info.angle);
-      if (spec.label) box.append(h('p', { class: 'picto-caption' }, spec.label));
+      if (p.target && currentTarget()) {
+        box.append(navStatusBox(p), h('p', { class: 'picto-caption' }, targetCaption(p.target)));
+      } else if (spec.label) box.append(h('p', { class: 'picto-caption' }, spec.label));
     } else {
       box.append(svgNode(pictoSvg(spec)));
+      if (currentTarget()) box.append(navStatusBox(p));
     }
     return box;
   }
@@ -997,12 +1073,17 @@ function boot(route, support, floor = null) {
       }
       if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK));
       const floorTurns = !settings.sim && planFirst;
-      if ((arrowCouldDraw() || floorTurns) && heading === null) {
+      if (currentTarget()) {
+        // Target point: one button starts the compass and the position watch together.
+        const waiting = positionCtl.active && !posMsg && !compassMsg;
+        if (!waiting && !arrowInfo()) main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onNavArrow }, '방향 화살표 켜기'));
+        if (compassMsg) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
+      } else if ((arrowCouldDraw() || floorTurns) && heading === null) {
         main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onCompass }, '방향 센서 켜기'));
         if (floorTurns) main.append(h('p', { class: 'note', id: 'compass-hint' }, '방향 센서를 켜면 지도가 바라보는 쪽으로 돌아가요.'));
       }
       // On the floor map a refused or missing compass is not an error: the map just stays north up.
-      if (compassMsg && !settings.sim && !planFirst) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
+      if (compassMsg && !settings.sim && !planFirst && !currentTarget()) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
       if (p.gap) main.append(h('p', { class: 'warn', id: 'gap-warning', role: 'note' }, '이 구간은 끊어진 곳이 있어요. 우회하거나 직원에게 물어보세요.'));
     }
     if (settings.sim && !arrivedHere && !showsFloorMap(p)) main.append(simPanel(p));
@@ -1123,6 +1204,7 @@ function boot(route, support, floor = null) {
 
     syncArrival(p);
     syncCompass(p);
+    syncPosition(p);
     disposeArrow3d();
     arrowCtl = null;
     arrowToken += 1;

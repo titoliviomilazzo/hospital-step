@@ -66,6 +66,13 @@ export function validateRoute(obj) {
         c.lat >= -90 && c.lat <= 90 && c.lon >= -180 && c.lon <= 180;
       if (!ok) errors.push(`${tag}.coord must be null or {lat, lon}`);
     }
+    if (p.target !== undefined) {
+      const c = p.target;
+      const ok = c && typeof c === 'object' && isFiniteNumber(c.lat) && isFiniteNumber(c.lon) &&
+        c.lat >= -90 && c.lat <= 90 && c.lon >= -180 && c.lon <= 180 &&
+        isNonEmptyString(c.name) && isNonEmptyString(c.source) && STATUSES.includes(c.status);
+      if (!ok) errors.push(`${tag}.target must be {lat, lon, name, source, status}`);
+    }
     for (const key of ['alertCoord', 'boardCoord']) {
       if (p[key] === undefined) continue;
       const c = p[key];

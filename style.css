@@ -192,6 +192,7 @@ details.more[open] > summary { margin-bottom: 12px; }
 .picto { display: block; width: 100%; height: auto; }
 .picto-box.arrow-mode { width: min(100%, 320px); display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .picto-box.done { width: 60%; max-width: 240px; }
+.nav-dist { margin: 4px 0; font-size: 28px; font-weight: 800; text-align: center; }
 .picto-caption { margin: 0; font-size: 28px; font-weight: 800; text-align: center; }
 .sign-note { margin: 0; font-size: 24px; font-weight: 700; text-align: center; }
 .arrow-holder { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 100%; overflow: hidden; }
