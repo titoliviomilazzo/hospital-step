@@ -121,6 +121,14 @@ h2 { font-size: 1.1em; margin: 0 0 8px; }
 @media (max-height: 640px) {
   :root { --top-h: 68px; }
   .hero, .dots { display: none; }
+  /* Bus ride screens (get-off alert): tighter vertical rhythm so the whole alert panel, down to
+     [알림 끄기], sits above the bar at scroll 0. The explanatory note is dropped before the alert
+     is on; the button and the browser's own location prompt say the same. */
+  .main { padding-top: calc(var(--top-h) + 6px); }
+  #live { margin-bottom: 4px; }
+  .instruction.compact { margin: 0 0 2px; line-height: 1.2; }
+  .stack { gap: 12px; }
+  .alight .note { display: none; }
 }
 .has-heard .hero { display: none; } /* the heard-text box takes the room, so every choice stays reachable */
 .heard { gap: 4px; padding: 8px 12px; }
@@ -131,9 +139,10 @@ h2 { font-size: 1.1em; margin: 0 0 8px; }
 .btn-icon { display: block; width: 48px; height: 48px; }
 
 /* Get-off alert panel on the bus screen. */
-.alight { align-items: stretch; }
+.alight { align-items: stretch; gap: 6px; padding: 8px 12px; }
 .alight .btn.secondary { min-height: 72px; }
-.alight-status { margin: 0; font-size: 28px; font-weight: 800; text-align: center; }
+.alight .note { line-height: 1.3; }
+.alight-status { margin: 0; font-size: 28px; font-weight: 800; line-height: 1.25; text-align: center; }
 .alight-banner {
   margin: 0; padding: 16px; font-size: 32px; line-height: 1.3; font-weight: 900; text-align: center;
   background: var(--bg); border: 8px solid var(--line); border-radius: 12px; word-break: keep-all;
@@ -279,8 +288,8 @@ textarea {
 .area-map { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; min-width: 0; }
 .area-svg { display: block; width: 100%; height: auto; max-width: 100%; }
 .area-caption { margin: 0; font-size: 18px; font-weight: 700; color: var(--muted); overflow-wrap: anywhere; }
-.ride-count { margin: 4px 0 0; font-size: 30px; font-weight: 900; text-align: center; }
-.ride-next { margin: 0; font-size: 22px; font-weight: 800; text-align: center; }
+.ride-count { margin: 0; font-size: 30px; font-weight: 900; line-height: 1.25; text-align: center; }
+.ride-next { margin: 0; font-size: 22px; font-weight: 800; line-height: 1.25; text-align: center; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

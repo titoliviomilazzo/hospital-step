@@ -4,6 +4,8 @@
 // changed sentence falls back to Web Speech until it is re-recorded.
 // With sound off every function is silent. Pure helpers are importable in Node.
 
+import { versioned } from './version.js';
+
 export const AUDIO_ROOT = 'audio';
 const MP3_PLAYBACK_RATE = { normal: 1, slow: 0.9 };
 const SPEECH_RATE = { normal: 0.95, slow: 0.8 };
@@ -59,7 +61,7 @@ export function loadManifest(fetchImpl = globalThis.fetch) {
   if (!manifestPromise) {
     manifestPromise = (async () => {
       try {
-        const res = await fetchImpl(`${AUDIO_ROOT}/manifest.json`);
+        const res = await fetchImpl(versioned(`${AUDIO_ROOT}/manifest.json`));
         if (!res.ok) return null;
         return await res.json();
       } catch {

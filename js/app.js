@@ -11,12 +11,13 @@ import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
 import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
-import { POSITION_MSG, createPositionController, navItems, targetAngle, targetCaption } from './navarrow.js';
+import { POSITION_MSG, createPositionController, navItems, targetAngle, targetCaption, autoStartPlan, needsArrowButton } from './navarrow.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
 import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './floor.js';
 import { arrivalPointFor, fetchArrivalDetail, locationText, REFRESH_MS, stopLabel } from './arrival.js';
 import { loadArea, renderAreaMap, sceneFor, ridingProgress, walkStart, remainingText, nextStopText } from './areamap.js';
 import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
+import { APP_VERSION, versioned } from './version.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
 export const STAGE_LABEL = {
@@ -382,6 +383,11 @@ function boot(route, support, floor = null, area = null) {
   // Arrow state. `heading` is the real compass reading (null until one arrives).
   let heading = null;
   let compassMsg = null;
+  // Arrow auto-start (real mode): see autoStartPlan(). `gesture` is true only while a tap is handled.
+  let gesture = false;
+  let compassGranted = false; // a heading arrived once, so iOS keeps the permission for this page
+  let autoCompassTried = false;
+  let autoPosTried = false;
   let pos = null; // latest position fix {lat, lon, accuracy}; memory only, never stored or sent
   let posMsg = null; // why the position is unavailable (denied / unavailable)
   let floorStep = null; // steady heading (multiple of 15) the floor map is drawn with; null = north up
@@ -526,9 +532,11 @@ function boot(route, support, floor = null, area = null) {
   function alightPanel(p) {
     // Children go through h(), which skips null; a raw DOM append() would print "null" as text.
     const kids = [];
+    // Once the ride count is known it already says the alert is on, so the waiting line is dropped
+    // (it takes two lines on a small phone and pushed [알림 끄기] under the bar).
     if (alightStop && alightLevel !== 'far') {
       kids.push(h('p', { class: `alight-banner ${alightLevel}`, id: 'alight-banner', role: 'alert' }, alertBannerText(p, alightLevel)));
-    } else if (alightStop) {
+    } else if (alightStop && !(p.busRoute && remainingText(rideProgress))) {
       kids.push(h('p', { class: 'alight-status', id: 'alight-status', role: 'status' }, ALERT_WAITING));
     }
     if (alightStop) kids.push(...rideTextNodes(p));
@@ -956,6 +964,10 @@ function boot(route, support, floor = null, area = null) {
     const anchor = box.querySelector('#alight-banner, #alight-status');
     if (anchor) anchor.after(...nodes);
     else box.prepend(...nodes);
+    if (nodes.some((n) => n.id === 'ride-count')) {
+      const waiting = document.getElementById('alight-status');
+      if (waiting) waiting.remove(); // the count line says it all
+    }
   }
 
   /** Redraws only the map (no full render, so the page does not jump back to the top). */
@@ -1036,6 +1048,7 @@ function boot(route, support, floor = null, area = null) {
       const first = heading === null;
       const hadMsg = compassMsg !== null; // a late reading after a 'no-data' message clears it
       heading = hd;
+      compassGranted = true;
       compassMsg = null;
       if (first || hadMsg) render();
       else {
@@ -1092,9 +1105,41 @@ function boot(route, support, floor = null, area = null) {
     render();
   }
 
+  /**
+   * Starts the position watch and the compass by itself on a screen that uses them. The compass
+   * request runs inside the tap that opened the screen (iOS needs that); without a gesture and
+   * without a prior grant the [방향 화살표 켜기] button stays. Each is tried once per stay.
+   */
+  function autoStartArrow(p) {
+    if (settings.sim || !p || state.arrived) return;
+    const wantsPosition = Boolean(p.target);
+    const wantsCompass = arrowCouldDraw() || showsFloorMap(p);
+    const needsPermission = typeof window !== 'undefined' && window.DeviceOrientationEvent
+      && typeof window.DeviceOrientationEvent.requestPermission === 'function';
+    const plan = autoStartPlan({
+      sim: settings.sim, wantsCompass, wantsPosition,
+      compassActive: compass.active, positionActive: positionCtl.active,
+      triedCompass: autoCompassTried, triedPosition: autoPosTried,
+      gesture, needsPermission: Boolean(needsPermission), granted: compassGranted,
+    });
+    if (wantsCompass) autoCompassTried = true;
+    if (wantsPosition) autoPosTried = true;
+    if (plan.compass) {
+      compassMsg = null;
+      compass.turnOn(); // synchronous up to requestPermission(), so it is still inside the tap
+    }
+    if (plan.position) {
+      posMsg = null;
+      pos = null;
+      positionCtl.turnOn();
+    }
+    if (plan.compass || plan.position) render();
+  }
+
   /** Ends the position watch when the visible screen has no target arrow. */
   function syncPosition(p) {
     const wanted = !settings.sim && p !== null && Boolean(p.target);
+    if (!wanted) autoPosTried = false;
     if (wanted || !(positionCtl.active || pos !== null || posMsg !== null)) return;
     positionCtl.turnOff();
     pos = null;
@@ -1104,6 +1149,7 @@ function boot(route, support, floor = null, area = null) {
   /** Ends the compass when the visible screen has no use for it, so it can be turned on again later. */
   function syncCompass(p) {
     const wanted = !settings.sim && p !== null && (arrowCouldDraw() || showsFloorMap(p));
+    if (!wanted) autoCompassTried = false;
     if (wanted || !(compass.active || heading !== null || compassMsg !== null)) return;
     compass.turnOff();
     heading = null;
@@ -1215,10 +1261,11 @@ function boot(route, support, floor = null, area = null) {
       const floorTurns = !settings.sim && planFirst;
       if (currentTarget()) {
         // Target point: one button starts the compass and the position watch together.
-        const waiting = positionCtl.active && !posMsg && !compassMsg;
-        if (!waiting && !arrowInfo()) main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onNavArrow }, '방향 화살표 켜기'));
+        // It starts by itself when the screen opens; the button stays only when that did not happen or failed.
+        const showButton = needsArrowButton({ heading, compassActive: compass.active, compassMsg }) || posMsg !== null;
+        if (showButton && !arrowInfo()) main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onNavArrow }, '방향 화살표 켜기'));
         if (compassMsg) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
-      } else if ((arrowCouldDraw() || floorTurns) && heading === null) {
+      } else if ((arrowCouldDraw() || floorTurns) && needsArrowButton({ heading, compassActive: compass.active, compassMsg })) {
         main.append(h('button', { class: 'btn', id: 'btn-compass', onclick: onCompass }, '방향 센서 켜기'));
         if (floorTurns) main.append(h('p', { class: 'note', id: 'compass-hint' }, '방향 센서를 켜면 지도가 바라보는 쪽으로 돌아가요.'));
       }
@@ -1321,6 +1368,7 @@ function boot(route, support, floor = null, area = null) {
       h('p', { class: 'muted' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요.'),
       h('p', { class: 'muted' }, '내릴 곳 알림을 켜면 휴대폰 위치를 쓰지만, 위치는 저장하거나 보내지 않아요.'),
       h('p', { class: 'muted' }, '말하기 기능을 쓰면 휴대폰 브라우저가 음성을 인식하려고 소리를 인터넷으로 보낼 수 있어요.'),
+      h('p', { class: 'muted', id: 'app-version' }, `앱 버전 ${APP_VERSION}`),
       h('button', { class: 'btn wide primary', onclick: () => dispatch({ type: 'CLOSE_SETTINGS' }) }, '닫기'),
     );
   }
@@ -1349,7 +1397,7 @@ function boot(route, support, floor = null, area = null) {
 
     // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
     // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
-    $('instruction').classList.toggle('compact', Boolean(p && p.alertCoord && alightStop));
+    $('instruction').classList.toggle('compact', Boolean(p && p.alertCoord));
     areaHost = null; // set again only when this screen builds a map
     syncArrival(p);
     syncCompass(p);
@@ -1382,10 +1430,17 @@ function boot(route, support, floor = null, area = null) {
     syncBarHeight();
     watchBar();
     renderOverlays();
+    if (!(state.helpOpen || state.settingsOpen || (state.companionOpen && Boolean(support)))) autoStartArrow(p);
   }
 
   // ------------------------------------------------------------ bar wiring (static buttons)
   // Assigned as properties so the handlers installed before loading are replaced.
+
+  // Marks the taps: a click is the user gesture iOS wants for the compass permission request.
+  document.addEventListener('click', () => {
+    gesture = true;
+    setTimeout(() => { gesture = false; }, 0);
+  }, true);
 
   $('btn-replay').disabled = false;
   $('btn-settings').disabled = false;
@@ -1473,7 +1528,7 @@ function supportOk(s) {
 /** support.json is optional: any failure or wrong shape means "no Seongnam panel". */
 async function loadSupport() {
   try {
-    const res = await fetch('data/support.json');
+    const res = await fetch(versioned('data/support.json'));
     if (!res.ok) return null;
     const data = await res.json();
     return supportOk(data) ? data : null;
@@ -1505,7 +1560,7 @@ async function start() {
   $('screen').replaceChildren();
   let route;
   try {
-    route = await loadRoute('data/route.migeum-snubh.json');
+    route = await loadRoute(versioned('data/route.migeum-snubh.json'));
   } catch (err) {
     showLoadError(err);
     return;
@@ -1514,14 +1569,14 @@ async function start() {
   // The floor schematic is optional: without it indoor screens work, only the map is missing.
   let floor = null;
   try {
-    floor = await loadFloor('data/floor.snubh-1dong-1f.json');
+    floor = await loadFloor(versioned('data/floor.snubh-1dong-1f.json'));
   } catch {
     floor = null;
   }
   // The outdoor map is optional too: without it only the map is missing.
   let area = null;
   try {
-    area = await loadArea('data/area.migeum-snubh.json');
+    area = await loadArea(versioned('data/area.migeum-snubh.json'));
   } catch {
     area = null;
   }

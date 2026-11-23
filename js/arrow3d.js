@@ -2,7 +2,9 @@
 // window.THREE; it is injected only when the 3D arrow is first needed. At most one renderer and
 // one canvas exist at a time; disposeArrow3d() releases them. The scene is drawn only when the
 // angle changes (no idle animation). Browser only.
-const SRC = 'vendor/three.min.js';
+import { versioned } from './version.js';
+
+const SRC = versioned('vendor/three.min.js');
 let threePromise = null;
 let current = null; // { renderer, canvas, geoms, mats }
 

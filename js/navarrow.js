@@ -160,3 +160,26 @@ export function createPositionController({ source, onFix, onUnavailable }) {
     turnOff: end,
   };
 }
+
+/**
+ * Decides what to start by itself when a screen that uses the arrow appears (real mode only).
+ * The position watch needs no gesture (the browser asks once). The compass needs one on iOS
+ * (DeviceOrientationEvent.requestPermission), so it starts only inside a tap, or when no
+ * permission is needed, or when it was already granted. Each controller is tried at most once
+ * per stay on such screens (`tried*`), so a refusal never loops a prompt.
+ */
+export function autoStartPlan({
+  sim, wantsCompass, wantsPosition, compassActive, positionActive,
+  triedCompass, triedPosition, gesture, needsPermission, granted,
+}) {
+  return {
+    compass: !sim && Boolean(wantsCompass) && !compassActive && !triedCompass
+      && Boolean(gesture || !needsPermission || granted),
+    position: !sim && Boolean(wantsPosition) && !positionActive && !triedPosition,
+  };
+}
+
+/** The manual [방향 화살표 켜기] / [방향 센서 켜기] button: shown while no heading is known and the compass is not running (or reported a problem). */
+export function needsArrowButton({ heading, compassActive, compassMsg }) {
+  return heading === null && (!compassActive || compassMsg !== null);
+}
