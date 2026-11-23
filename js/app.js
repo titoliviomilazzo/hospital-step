@@ -1,7 +1,7 @@
 // State machine and rendering. `nextState` is pure and importable in Node; the DOM boot at the
 // bottom runs only in a browser. Later stages hook in at the EXTENSION POINT comments.
 import { loadRoute, OUTDOOR_STAGES } from './route.js';
-import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_UNKNOWN_SENTENCE, HELP_UNKNOWN_SPEECH, REASK_HOSPITAL_SPEECH, ARRIVED_SENTENCE, alertSentences } from './clips.js';
+import { FIELDS, FIXED_CLIPS, NOTES_SENTENCES, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_UNKNOWN_SENTENCE, HELP_UNKNOWN_SPEECH, REASK_HOSPITAL_SPEECH, ARRIVED_SENTENCE, alertSentences } from './clips.js';
 import { helpFor } from './help.js';
 import { NOT_HEARD, appliedNotice, blockedNotice } from './notices.js';
 import { loadState, saveState } from './storage.js';
@@ -18,7 +18,13 @@ import { startAlightWatch, simulatedSource, simulatedRouteSource } from './aligh
 import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './floor.js';
 import { arrivalPointFor, fetchArrivalDetail, locationText, REFRESH_MS, stopLabel } from './arrival.js';
 import { loadArea, renderAreaMap, sceneFor, ridingProgress, walkStart, remainingText, nextStopText } from './areamap.js';
-import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
+import {
+  createNotesFlow, createWakeLock, asksNotesAfter, isConsultPoint, showEnterRoomButton, showRecordsButton, recordForDate, localDate,
+  shouldOfferNotes, helpMaySpeak, TAP_GUARD_MS,
+} from './notes-flow.js';
+import { createNotesUi } from './notes-ui.js';
+import { listRecords, getRecord, clearRecords } from './notes-store.js';
+import { WEBHOOK_URL, ARRIVAL_URL, NOTES_URL } from '../config.js';
 import { APP_VERSION, versioned } from './version.js';
 import { attachZoom } from './zoom.js';
 
@@ -410,7 +416,7 @@ let booted = false;
 
 // ---------------------------------------------------------------- app
 
-function boot(route, support, floor = null, area = null) {
+function boot(route, support, floor = null, area = null, sample = null) {
   booted = true;
   const $ = (id) => document.getElementById(id);
   const stored = loadState(route.points.map((p) => p.id));
@@ -472,6 +478,40 @@ function boot(route, support, floor = null, area = null) {
   preloadManifest();
   const persist = () => saveState({ settings, lastPointId: state.lastPointId });
 
+  // Visit notes (docs/PLAN-visit-notes.md). The flow owns N0..N4, the ui draws them and V1/V2.
+  const flow = createNotesFlow({
+    createListener, // listen.js; the flow never starts it before the doctor's tap on N1
+    sim: () => settings.sim,
+    sample,
+    notesUrl: NOTES_URL,
+    wakeLock: createWakeLock(),
+    tapGuardMs: TAP_GUARD_MS, // a tap within 0.6 s of a new notes screen is ignored (double taps, taps meant for the last screen)
+    onChange: () => render(),
+  });
+  const notesUi = createNotesUi({
+    h, svgNode, flow, say, stopSpeaking, rerender: () => render(), online: Boolean(NOTES_URL),
+    onSpeakPoint: () => sayCurrent(),
+    notesUrl: NOTES_URL,
+    onBack: () => {
+      flow.leave();
+      dispatch({ type: 'PREV' });
+      sayCurrent();
+    },
+    onContinue: () => {
+      // N4 done: the consultation is over, so go on exactly like [진료가 끝났어요].
+      chime(settings);
+      dispatch({ type: 'CONFIRM' });
+      sayCurrent();
+    },
+  });
+  /** The record of this visit (just taken, or one dated today), for the finish screen. */
+  // Example records (simulation) are offered back only while simulation is on.
+  const todayRecord = () => {
+    const own = flow.state.record ? getRecord(flow.state.record) : null;
+    if (own && (own.source !== 'sample' || settings.sim)) return own;
+    return recordForDate(listRecords(), localDate(new Date()), { sim: settings.sim });
+  };
+
   /** Drops what was heard on a wizard screen (the sentence, its badge, typed text, messages). */
   function clearHeard() {
     utterance = null;
@@ -486,6 +526,7 @@ function boot(route, support, floor = null, area = null) {
   function dispatch(action, { keepHeard = false } = {}) {
     const prev = state;
     state = nextState(state, action, route);
+    if (action.type === 'RESTART') { flow.reset(); notesUi.reset(); } // a new visit asks N0 afresh
     // The watch belongs to one screen: leaving it (confirm, back, reset) ends it.
     if (alightPointId !== null && (currentPoint() === null || currentPoint().id !== alightPointId || state.arrived)) stopAlight();
     if (state.lastPointId !== prev.lastPointId) persist();
@@ -698,6 +739,7 @@ function boot(route, support, floor = null, area = null) {
 
   /** [다시 듣기]: says again what the screen shows as its key message (a re-ask, an alert, the finish text). */
   function replayCurrent() {
+    if (flow.state.phase !== null || notesUi.isOpen()) return notesUi.replay();
     const p = currentPoint();
     if (!p && reAskDecision && reAsk) return speakReAsk(reAskDecision);
     if (p && !state.arrived && alightPointId === p.id) {
@@ -741,8 +783,15 @@ function boot(route, support, floor = null, area = null) {
     if (ri !== null) {
       main.append(h('button', { class: 'btn wide', id: 'btn-resume', onclick: () => {
         dispatch({ type: 'RESUME' });
-        speakThen(say('ui-resume', CLIP_TEXT['ui-resume']), () => sayCurrent());
+        // Resuming can land straight on the consultation point: N0 is still asked, once.
+        const offer = shouldOfferNotes(currentPoint(), flow.state) && flow.askAfterConfirm();
+        speakThen(say('ui-resume', CLIP_TEXT['ui-resume']), () => (offer ? say('notes-ask', NOTES_SENTENCES.ask) : sayCurrent()));
       } }, resumeLabel(state, route)));
+    }
+
+    // [내 진료 기록]: only on the first screen and only when a record exists.
+    if (step === 'hospital' && !state.editing && showRecordsButton(listRecords().length)) {
+      main.append(h('button', { class: 'btn wide', id: 'btn-records', onclick: () => notesUi.openList() }, '내 진료 기록'));
     }
 
     const heroKinds = HERO_BY_STEP[step] || [];
@@ -1351,8 +1400,22 @@ function boot(route, support, floor = null, area = null) {
     const main = h('div', { class: 'stack' });
     const arrivedHere = state.arrived && state.index === route.points.length - 1;
 
+    // The user said yes on N0: the doctor's consent card (N1) opens from this one big button, which
+    // sits first so it is above the bar without scrolling, even in simulation mode.
+    if (isConsultPoint(p) && showEnterRoomButton(flow.state)) {
+      main.append(h('button', { class: 'btn wide primary notes-btn lead', id: 'btn-enter-room', onclick: () => {
+        flow.enterRoom();
+        if (flow.state.phase === 'n1') say('notes-consent', NOTES_SENTENCES.consent); // an ignored early tap says nothing
+      } }, '진료실에 들어왔어요'));
+    }
+
     if (arrivedHere) {
       main.append(h('div', { class: 'picto-box done', id: 'arrow-box' }, svgNode(doneSvg())));
+      const rec = todayRecord();
+      if (rec) {
+        main.append(h('button', { class: 'btn wide', id: 'btn-today-record', onclick: () => notesUi.openRecord(rec.id, { read: true }) },
+          '오늘 진료 내용 다시 듣기'));
+      }
     } else {
       // The get-off alert panel sits right under the instruction so its button never needs scrolling.
       // Target points (O1/R1) show it below the arrow block instead, so the arrow stays on top.
@@ -1363,10 +1426,6 @@ function boot(route, support, floor = null, area = null) {
       const planFirst = showsFloorMap(p);
       if (planFirst) main.append(floorPanel());
       main.append(pictureBox(p, Boolean(p.alertCoord) || planFirst || areaShown(p)));
-      // Real mode: the hospital's own number as well. No live position is ever claimed.
-      if (!settings.sim && p.stage === 'indoor' && Number.isInteger(p.facility)) {
-        main.append(h('p', { class: 'floor-ref', id: 'floor-ref' }, `병원 층별 안내 ${p.facility}번`));
-      }
       // On a target point the arrow button comes first (the sign note moves below it).
       const signNote = arrowInfo() ? null : h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK);
       if (signNote && !currentTarget()) main.append(signNote);
@@ -1428,6 +1487,23 @@ function boot(route, support, floor = null, area = null) {
     }
   }
 
+  /** While the microphone is open a modal must not hide that it is: a red bar stays on top of every overlay. */
+  function syncRecIndicator(overlayOpen) {
+    const want = overlayOpen && flow.state.phase === 'n2' && flow.state.listening;
+    let el = document.getElementById('overlay-rec');
+    if (!want) {
+      if (el) el.remove();
+      document.body.classList.remove('has-overlay-rec');
+      return;
+    }
+    if (!el) {
+      el = h('div', { id: 'overlay-rec', class: 'rec-bar live overlay-rec', role: 'status' },
+        h('span', { class: 'rec-dot', 'aria-hidden': 'true' }), h('span', { class: 'rec-label' }, '받아 적는 중'));
+      document.body.append(el);
+    }
+    document.body.classList.add('has-overlay-rec');
+  }
+
   function renderOverlays() {
     syncOverlay($('overlay-help'), state.helpOpen, buildHelp);
     syncOverlay($('overlay-companion'), state.companionOpen && Boolean(support), companionCard);
@@ -1435,6 +1511,7 @@ function boot(route, support, floor = null, area = null) {
 
     const open = state.helpOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
     document.body.classList.toggle('modal-open', open);
+    syncRecIndicator(open);
     setBackgroundInert(open);
     if (open && !wasOverlay) {
       const first = document.querySelector('.overlay:not([hidden]) button, .overlay:not([hidden]) input');
@@ -1447,9 +1524,37 @@ function boot(route, support, floor = null, area = null) {
     wasOverlay = open;
   }
 
+  /** [진료 기록 모두 지우기] with one confirm step inside the settings card. */
+  function clearNotesControl() {
+    const box = h('div', { class: 'clear-notes', id: 'clear-notes' });
+    const show = (mode, msg = null) => {
+      const n = listRecords().length;
+      box.replaceChildren(...[
+        mode === 'confirm'
+          ? h('p', { class: 'warn', role: 'alert' }, `진료 기록 ${n}건을 모두 지울까요? 되돌릴 수 없어요.`)
+          : null,
+        msg ? h('p', { class: 'muted', role: 'status' }, msg) : null,
+        mode === 'confirm'
+          ? h('div', { class: 'link-row' },
+            h('button', { class: 'btn', id: 'btn-clear-notes-yes', onclick: () => {
+              const cleared = clearRecords();
+              flow.forget(); // no text of a visit stays in memory
+              notesUi.closeViews();
+              show('idle', cleared ? '진료 기록을 모두 지웠어요.' : '지우지 못했어요. 브라우저의 저장 공간을 확인한 뒤 다시 눌러 주세요.');
+            } }, '모두 지우기'),
+            h('button', { class: 'btn', id: 'btn-clear-notes-no', onclick: () => show('idle') }, '그만두기'))
+          : h('button', { class: 'btn wide', id: 'btn-clear-notes', disabled: n === 0, onclick: () => show('confirm') },
+            n === 0 ? '진료 기록 모두 지우기 (기록 없음)' : '진료 기록 모두 지우기'),
+      ].filter(Boolean));
+    };
+    show('idle');
+    return box;
+  }
+
   function settingsCard() {
     const update = (patch) => {
       if ('sim' in patch && patch.sim !== settings.sim) stopAlight(); // a status from the other mode is stale
+      if ('sim' in patch && patch.sim !== settings.sim) flow.modeChanged(); // so is a running capture (a summary in progress finishes saving)
       settings = { ...settings, ...patch };
       persist();
       if (!settings.sound) stopSpeaking();
@@ -1477,9 +1582,10 @@ function boot(route, support, floor = null, area = null) {
       reducedMotion() ? h('p', { class: 'muted' }, '움직임 줄이기 설정이 켜져 있어서 평면 화살표만 보여요.') : null,
       toggle('largeText', '큰 글씨'),
       toggle('sim', '시뮬레이션', '(모식도로 화살표를 연습해 봐요)'),
-      h('p', { class: 'muted' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요.'),
+      h('p', { class: 'muted' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요. 단, 진료 말씀 적어 두기를 쓰고 선생님이 허락하신 경우에는 글자로 정리한 진료 기록이 이 기기에만 남아요. 소리는 저장하지 않아요.'),
       h('p', { class: 'muted' }, '내릴 곳 알림을 켜면 휴대폰 위치를 쓰지만, 위치는 저장하거나 보내지 않아요.'),
       h('p', { class: 'muted' }, '말하기 기능을 쓰면 휴대폰 브라우저가 음성을 인식하려고 소리를 인터넷으로 보낼 수 있어요.'),
+      clearNotesControl(),
       h('p', { class: 'muted', id: 'app-version' }, `앱 버전 ${APP_VERSION}`),
       h('button', { class: 'btn wide primary', onclick: () => dispatch({ type: 'CLOSE_SETTINGS' }) }, '닫기'),
     );
@@ -1495,21 +1601,32 @@ function boot(route, support, floor = null, area = null) {
 
   function render() {
     const screen = screenOf(state, route);
-    const p = currentPoint();
+    const nScreen = notesUi.current(); // a notes screen (N0..N4, V1, V2) takes over #screen and the heading
+    const p = nScreen ? null : currentPoint();
     document.documentElement.dataset.screen = screen;
     document.documentElement.classList.toggle('large', settings.largeText);
 
     const prog = progressOf(state, route);
-    $('stage-pill').textContent = STAGE_LABEL[screen];
-    $('progress').textContent = `${prog.cur} / ${prog.total}`;
-    $('progress').setAttribute('aria-label', `이 단계 ${prog.total}개 중 ${prog.cur}번째`);
-    renderDots(prog.cur, prog.total);
-    if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
+    if (nScreen && nScreen.header) {
+      // The record screens (list, one record) are not a step of the visit: own header, no step counter.
+      $('stage-pill').textContent = nScreen.header;
+      $('progress').textContent = '';
+      $('progress').removeAttribute('aria-label');
+      renderDots(0, 0);
+    } else {
+      $('stage-pill').textContent = STAGE_LABEL[screen];
+      $('progress').textContent = `${prog.cur} / ${prog.total}`;
+      $('progress').setAttribute('aria-label', `이 단계 ${prog.total}개 중 ${prog.cur}번째`);
+      renderDots(prog.cur, prog.total);
+    }
+    if (nScreen) setInstruction(nScreen.instruction);
+    else if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
     else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
 
     // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
     // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
-    $('instruction').classList.toggle('compact', Boolean(p && p.alertCoord));
+    $('instruction').classList.toggle('compact', Boolean((p && p.alertCoord) || (nScreen && nScreen.compact)
+      || (p && isConsultPoint(p) && showEnterRoomButton(flow.state)))); // I4 with the room button: the button must stay above the bar
     areaHost = null; // set again only when this screen builds a map
     syncArrival(p);
     syncCompass(p);
@@ -1520,21 +1637,24 @@ function boot(route, support, floor = null, area = null) {
     const saved = captureUiState($('screen'), document.activeElement);
     $('screen').replaceChildren(...[
       settings.sim ? h('div', { class: 'sim-banner', role: 'status' }, BANNER_TEXT) : null,
-      p ? renderPoint(p) : renderPrepare(),
+      nScreen ? nScreen.node : (p ? renderPoint(p) : renderPrepare()),
     ].filter(Boolean));
+    notesUi.afterRender();
+    $('btn-replay').disabled = Boolean(nScreen && nScreen.noReplay); // never speak into the open microphone
     restoreUiState($('screen'), saved);
     // The document scrolls, not #main. Go to the top only when the screen changed, never for a
     // background re-render and never while an overlay is open.
     const overlayOpen = state.helpOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
-    const key = screenKeyOf(state, route);
+    const key = `${screenKeyOf(state, route)}|${nScreen ? nScreen.key : ''}`;
     if (shouldScrollTop(lastScreenKey, key, overlayOpen)) {
       if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
       lastScreenKey = key;
+      flow.touchScreen(); // a new screen: taps in the first 0.6 s are ignored
     }
 
     // The primary button keeps its place on every screen; when it has nothing to do it is only hidden.
     const primary = $('btn-primary');
-    const bp = barPrimary(state, route);
+    const bp = nScreen ? { label: primary.textContent, visible: false, action: null } : barPrimary(state, route);
     primary.textContent = bp.label;
     primary.classList.toggle('vacant', !bp.visible);
     primary.disabled = !bp.visible;
@@ -1560,6 +1680,7 @@ function boot(route, support, floor = null, area = null) {
   $('btn-help').onclick = () => {
     openerSel = '#btn-help';
     dispatch({ type: 'OPEN_HELP' });
+    if (!helpMaySpeak(flow.state)) return; // the card stays silent while the microphone is open (it would hear the app)
     const help = helpFor(state, route, floor);
     say(help.clipId, help.speech);
   };
@@ -1568,6 +1689,7 @@ function boot(route, support, floor = null, area = null) {
     dispatch({ type: 'OPEN_SETTINGS' });
   };
   $('btn-primary').onclick = () => {
+    if (flow.state.phase !== null || notesUi.isOpen()) return; // a notes screen has its own buttons
     const { action } = barPrimary(state, route);
     if (action === 'next') {
       dispatch({ type: 'WIZARD_NEXT' });
@@ -1582,8 +1704,13 @@ function boot(route, support, floor = null, area = null) {
     } else if (action === 'confirm') {
       chime(settings);
       vibrate(80);
+      // Confirming the point before the consultation asks N0 once per visit (the screen is up before
+      // the route moves on, so I4 never flashes in between).
+      const askNotes = asksNotesAfter(route, state.index) && flow.state.wants === null;
+      if (askNotes) flow.askAfterConfirm();
       dispatch({ type: 'CONFIRM' });
-      sayCurrent();
+      if (askNotes) say('notes-ask', NOTES_SENTENCES.ask);
+      else sayCurrent();
     }
   };
   document.addEventListener('keydown', (e) => {
@@ -1693,7 +1820,18 @@ async function start() {
   } catch {
     area = null;
   }
-  boot(route, support, floor, area);
+  // The example conversation for simulation mode is optional: without it simulation just has no notes demo.
+  let sample = null;
+  try {
+    const res = await fetch(versioned('data/sample-visit.json'));
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.lines) && typeof data.transcript === 'string') sample = data;
+    }
+  } catch {
+    sample = null;
+  }
+  boot(route, support, floor, area, sample);
 }
 
 if (typeof document !== 'undefined') start();

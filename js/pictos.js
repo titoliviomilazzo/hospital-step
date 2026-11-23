@@ -366,6 +366,75 @@ export const HERO_BY_STEP = {
 /** Small icon at the left of each mobility answer button, by answer value. */
 export const MOBILITY_ICON = { walker: 'walker', wheelchair: 'wheelchair', none: 'walking' };
 
+// ---------------------------------------------------------------- visit-notes pictures
+// Same 200x200 flat style as the hero illustrations. They carry no text of their own and the
+// screens always print a text title next to them (a picture alone is never the message).
+
+const NOTE_LABELS = {
+  note: '공책과 연필 그림',
+  next: '달력 그림',
+  med: '알약과 약봉지 그림',
+  test: '시험관 그림',
+  todo: '체크 표시가 있는 종이 그림',
+  caution: '세모 느낌표 그림',
+};
+
+export const NOTE_KINDS = Object.keys(NOTE_LABELS);
+
+const NOTE_DRAW = {
+  // notebook with a spine and lines, a pencil lying across the corner
+  note: () => ground
+    + `<rect x="46" y="22" width="108" height="150" rx="10" fill="#fff" ${stroke(7)}/>`
+    + `<rect x="46" y="22" width="22" height="150" rx="8" fill="${SOFT}" ${stroke(7)}/>`
+    + [62, 86, 110].map((y) => line(84, y, 138, y, 6)).join('')
+    + `<polygon points="150,120 174,96 188,110 164,134" fill="#fff" ${stroke(6)}/>`
+    + `<polygon points="150,120 164,134 144,142" fill="${SOFT}" ${stroke(6)}/>`,
+  // calendar with two rings, a grid of days and one day marked
+  next: () => ground
+    + `<rect x="34" y="34" width="132" height="150" rx="12" fill="#fff" ${stroke(7)}/>`
+    + `<path d="M34 46 Q34 34 46 34 H154 Q166 34 166 46 V74 H34 Z" fill="${SOFT}" ${stroke(7)}/>`
+    + line(66, 18, 66, 48, 9) + line(134, 18, 134, 48, 9)
+    + [0, 1, 2].flatMap((r) => [0, 1, 2, 3].map((c) => (r === 1 && c === 2
+      ? `<circle cx="${58 + c * 28}" cy="${102 + r * 28}" r="13" fill="${INK}"/>`
+      : `<rect x="${50 + c * 28}" y="${94 + r * 28}" width="16" height="16" rx="3" fill="${SOFT}" ${stroke(3)}/>`))).join(''),
+  // medicine bag with a capsule in front of it
+  med: () => ground
+    + `<path d="M40 70 H118 V176 H40 Z" fill="${SOFT}" ${stroke(7)}/>`
+    + `<path d="M40 70 L48 56 L56 70 L64 56 L72 70 L80 56 L88 70 L96 56 L104 70 L112 56 L118 70" fill="#fff" ${stroke(5)}/>`
+    + `<rect x="52" y="104" width="54" height="40" rx="6" fill="#fff" ${stroke(5)}/>`
+    + line(79, 110, 79, 138, 7) + line(65, 124, 93, 124, 7)
+    + `<g transform="rotate(-35 140 120)"><rect x="104" y="100" width="72" height="40" rx="20" fill="#fff" ${stroke(7)}/>`
+    + `<path d="M140 100 H156 a20 20 0 0 1 0 40 H140 Z" fill="${SOFT}" ${stroke(7)}/>`
+    + `<line x1="140" y1="100" x2="140" y2="140" ${stroke(6)}/></g>`,
+  // two test tubes in a rack
+  test: () => ground
+    + `<path d="M62 24 H98 V138 a18 18 0 0 1 -36 0 Z" fill="#fff" ${stroke(7)}/>`
+    + `<path d="M62 100 H98 V138 a18 18 0 0 1 -36 0 Z" fill="${INK}"/>`
+    + `<path d="M112 24 H148 V138 a18 18 0 0 1 -36 0 Z" fill="#fff" ${stroke(7)}/>`
+    + `<path d="M112 80 H148 V138 a18 18 0 0 1 -36 0 Z" fill="${SOFT}" ${stroke(5)}/>`
+    + `<rect x="46" y="126" width="118" height="12" rx="4" fill="${SOFT}" ${stroke(6)}/>`
+    + `<rect x="46" y="150" width="118" height="30" rx="6" fill="${SOFT}" ${stroke(7)}/>`,
+  // paper with three check boxes and lines
+  todo: () => ground
+    + `<path d="M50 14 H128 L156 42 V184 H50 Z" fill="#fff" ${stroke(7)}/>`
+    + `<path d="M128 14 V42 H156" fill="${SOFT}" ${stroke(7)}/>`
+    + [70, 106, 142].map((y) => `<rect x="64" y="${y - 10}" width="22" height="22" rx="3" fill="#fff" ${stroke(5)}/>`
+      + poly(`67,${y + 1} 74,${y + 9} 86,${y - 12}`, 6) + line(98, y, 140, y, 6)).join(''),
+  // warning triangle with an exclamation mark
+  caution: () => ground
+    + `<path d="M100 22 L180 168 H20 Z" fill="${SOFT}" ${stroke(9)}/>`
+    + line(100, 70, 100, 118, 14)
+    + `<circle cx="100" cy="144" r="9" fill="${INK}"/>`,
+};
+
+/** Inline SVG string of a visit-notes picture. `kind` is one of NOTE_KINDS; `cls` is the CSS class. */
+export function noteSvg(kind, cls = 'note-svg') {
+  const draw = NOTE_DRAW[kind];
+  if (!draw) throw new Error(`unknown note picture: ${kind}`);
+  return `<svg class="${cls}" viewBox="0 0 200 200" role="img" aria-label="${escapeXml(NOTE_LABELS[kind])}" `
+    + `xmlns="http://www.w3.org/2000/svg" focusable="false">${draw()}</svg>`;
+}
+
 /** Browser only: turns one of the SVG strings above into an element. */
 export function svgNode(svg) {
   const holder = document.createElement('div');

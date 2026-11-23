@@ -90,6 +90,27 @@ export const FIXED_CLIPS = [
   { clipId: 'alert-off', text: '위치 확인이 꺼져 있어요. 버스 안내 방송을 잘 들어 주세요.' },
 ];
 
+/**
+ * Fixed sentences of the visit-notes screens (docs/PLAN-visit-notes.md). Not recorded yet: the
+ * manifest has no entry, so the app falls back to the phone voice until the owner approves the
+ * wording and records them. Everything else on the notes screens (the organised items, the replay)
+ * is different every time and is always read by the phone voice.
+ */
+export const NOTES_SENTENCES = {
+  ask: '선생님 말씀을 적어 둘까요?',
+  consent: '진료 내용을 글로 적어 두어도 될까요?',
+  declined: '적지 않을게요. 편하게 진료 받으세요.',
+  summarising: '정리하고 있어요. 잠시만요.',
+  last: '의사·간호사 말씀이 우선입니다. 헷갈리면 다시 물어보세요.',
+};
+export const NOTES_CLIPS = [
+  { clipId: 'notes-ask', text: NOTES_SENTENCES.ask },
+  { clipId: 'notes-consent', text: NOTES_SENTENCES.consent },
+  { clipId: 'notes-declined', text: NOTES_SENTENCES.declined },
+  { clipId: 'notes-summarising', text: NOTES_SENTENCES.summarising },
+  { clipId: 'notes-last', text: NOTES_SENTENCES.last },
+];
+
 // The spoken "now" alert names no stop, so the outbound and the return leg share one clip.
 const ALERT_NOW_SPEECH = '이번 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.';
 
@@ -155,6 +176,7 @@ export function buildVoiceRows(route) {
       rows.push({ clipId: `${p.id}-detail`, text: p.detailSpeech || p.detail });
     }
   }
+  for (const c of NOTES_CLIPS) rows.push({ ...c });
   for (const c of FIXED_CLIPS) rows.push({ ...c });
   // Return-leg alert clips: the outbound ones are fixed above, so only add ids that are not there yet.
   for (const p of route.points) {

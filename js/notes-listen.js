@@ -35,6 +35,7 @@ export function createNotesListener({
   let limitTimer = null;
   let restartTimer = null;
   let lastCode = null;
+  let errorSeq = 0; // bumped for every counted error, so a failure is counted once however it is reported
 
   const emit = (fn, ...args) => { try { if (fn) fn(...args); } catch { /* ignore callback errors */ } };
   const clearTimers = () => {
@@ -58,13 +59,33 @@ export function createNotesListener({
   function countError(code) {
     lastCode = code || 'unknown';
     errors += 1;
+    errorSeq += 1;
     if (errors >= MAX_ERRORS) fail('errors');
+  }
+
+  /** One restart at a time, after the short delay. */
+  function scheduleRestart() {
+    if (!running || restartTimer !== null) return;
+    restartTimer = setT(() => { restartTimer = null; begin(); }, restartDelayMs);
   }
 
   function begin() {
     if (!running || !inner) return;
     if (now() - startedAt >= maxMs) { finish('stopped', 'timeout'); return; }
-    if (inner.start() === false && running) countError('start-failed');
+    const before = errorSeq;
+    let refused = false;
+    try {
+      refused = inner.start() === false;
+    } catch (err) {
+      if (running && errorSeq === before) countError(err && err.name ? err.name : 'start-failed');
+      scheduleRestart();
+      return;
+    }
+    // listen.js already reports a failed start through onError: count it only when nobody did.
+    if (refused && running) {
+      if (errorSeq === before) countError('start-failed');
+      scheduleRestart(); // no onEnd will follow a start that never began
+    }
   }
 
   function start() {
@@ -87,14 +108,11 @@ export function createNotesListener({
       }),
       onNoSpeech: live(() => { /* silence in a consultation is normal: not an error */ }),
       onError: live((code) => countError(code)),
-      onStartTimeout: live(() => countError('start-timeout')),
+      onStartTimeout: live(() => { countError('start-timeout'); scheduleRestart(); }), // no onEnd follows a start timeout
       onDenied: live(() => fail('denied')),
       onBlocked: live(() => fail('blocked')),
       onUnsupported: live(() => fail('unsupported')),
-      onEnd: live(() => {
-        if (restartTimer !== null) return;
-        restartTimer = setT(() => { restartTimer = null; begin(); }, restartDelayMs);
-      }),
+      onEnd: live(() => scheduleRestart()),
     });
     limitTimer = setT(() => { limitTimer = null; finish('stopped', 'timeout'); }, maxMs);
     emit(onState, 'listening', { reason: null, code: null });

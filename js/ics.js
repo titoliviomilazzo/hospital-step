@@ -76,6 +76,7 @@ function hash(s) {
   return h.toString(16).padStart(8, '0');
 }
 
+const seqOf = (n) => (Number.isInteger(n) && n >= 0 ? n : 0);
 const alarm = (trigger, text) => ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${escapeText(text)}`, `TRIGGER:${trigger}`, 'END:VALARM'];
 const header = () => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//hospital-step//notes//KO', 'CALSCALE:GREGORIAN'];
 
@@ -86,13 +87,13 @@ const header = () => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//hospital-step
  * fall on 09:00 the day before and 08:00 the same day. `dtstamp` (Date or 'YYYYMMDDTHHMMSSZ')
  * and `uid` are injectable for deterministic output.
  */
-export function visitIcs({ date, time = null, place = null, dtstamp = undefined, uid = null } = {}) {
+export function visitIcs({ date, time = null, place = null, dtstamp = undefined, uid = null, sequence = 0 } = {}) {
   const d = parseDate(date);
   if (!d) return null;
   const t = parseTime(time);
   const start = new Date(Date.UTC(d.y, d.mo - 1, d.d, t ? t.h : 0, t ? t.mi : 0));
   const id = uid || `visit-${date}${t ? `T${time.replace(':', '')}` : ''}-${hash(`${date}|${time}|${place}`)}@hospital-step`;
-  const lines = [...header(), 'BEGIN:VEVENT', `UID:${id}`, `DTSTAMP:${stamp(dtstamp)}`];
+  const lines = [...header(), 'BEGIN:VEVENT', `UID:${id}`, `SEQUENCE:${seqOf(sequence)}`, `DTSTAMP:${stamp(dtstamp)}`];
   if (t) {
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     lines.push(`DTSTART:${ymd(start)}T${hms(start)}`, `DTEND:${ymd(end)}T${hms(end)}`);
@@ -114,7 +115,7 @@ export function visitIcs({ date, time = null, place = null, dtstamp = undefined,
  * skipped. Repeats for `days` days (default 30, 1..365) via RRULE COUNT. Returns null when
  * `startDate` is missing or no slot has a valid time. The alarm fires at the start time.
  */
-export function medIcs({ slots = [], startDate, days = DEFAULT_MED_DAYS, dtstamp = undefined } = {}) {
+export function medIcs({ slots = [], startDate, days = DEFAULT_MED_DAYS, dtstamp = undefined, uidBase = null, sequence = 0 } = {}) {
   const d = parseDate(startDate);
   if (!d) return null;
   const count = Number.isInteger(days) && days >= 1 && days <= 365 ? days : DEFAULT_MED_DAYS;
@@ -128,7 +129,8 @@ export function medIcs({ slots = [], startDate, days = DEFAULT_MED_DAYS, dtstamp
     const label = slot && typeof slot.label === 'string' ? slot.label.trim() : '';
     events.push(
       'BEGIN:VEVENT',
-      `UID:med-${startDate}-${i}-${hash(`${startDate}|${slot.time}|${label}|${count}`)}@hospital-step`,
+      `UID:${uidBase ? `${uidBase}-${i}` : `med-${startDate}-${i}-${hash(`${startDate}|${slot.time}|${label}|${count}`)}`}@hospital-step`,
+      `SEQUENCE:${seqOf(sequence)}`,
       `DTSTAMP:${stampText}`,
       `DTSTART:${ymd(start)}T${hms(start)}`,
       `DTEND:${ymd(end)}T${hms(end)}`,
