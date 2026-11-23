@@ -1,10 +1,12 @@
 // State machine and rendering. `nextState` is pure and importable in Node; the DOM boot at the
 // bottom runs only in a browser. Later stages hook in at the EXTENSION POINT comments.
 import { loadRoute, OUTDOOR_STAGES } from './route.js';
-import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_SENTENCE, HELP_SPEECH, REASK_HOSPITAL_SPEECH, alertSentences } from './clips.js';
+import { FIELDS, FIXED_CLIPS, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_UNKNOWN_SENTENCE, HELP_UNKNOWN_SPEECH, REASK_HOSPITAL_SPEECH, ARRIVED_SENTENCE, alertSentences } from './clips.js';
+import { helpFor } from './help.js';
+import { NOT_HEARD, appliedNotice, blockedNotice } from './notices.js';
 import { loadState, saveState } from './storage.js';
 import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking, installAudioUnlock } from './voice.js';
-import { createListener } from './listen.js';
+import { createListener, isSupported as micSupported } from './listen.js';
 import { parseVisit, expandAbbreviations } from './intent.js';
 import { arrowAngle, bearingDeg, createCompassController, quantiseHeading } from './compass.js';
 import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
@@ -31,28 +33,50 @@ const STEP_CLIP = {
 };
 // On-screen sentence of the two wizard screens whose spoken clip is too long for three lines of 36px.
 const STEP_SCREEN_TEXT = { confirm: '이렇게 가시는 게 맞나요?', checklist: '신분증과 진료의뢰서를 챙기세요.' };
-const NOT_HEARD = '잘 알아듣지 못했어요. ';
 
 /**
- * What to re-ask after a spoken sentence has been merged (`prev` and `next` are the states before and
- * after SET_FIELDS). The re-ask follows the screen: the hospital sentence only when the hospital
- * question is showing and still unanswered (the parser's reAsk is ignored otherwise, also on the AI
- * path); a question screen that did not move on repeats its own question, spoken with the recorded
- * clip of that step (`speak: 'step'`). Returns null when the sentence moved the wizard on.
+ * What to say and show after a spoken sentence has been merged. `prev` and `next` are the states
+ * before and after SET_FIELDS, `heard` is the parsed fields. The screen decides ("follow the screen"):
+ * an answer to the question on screen always applies, even over a button choice; a value for another
+ * question is written down unless a button choice already holds that field (then it is kept and the
+ * user is told how to change it). Returns null when the screen moved on and nothing was blocked.
+ * Otherwise {kind, prefix, question, text, speak, prefixClip}: `text` is shown, and is also what is
+ * spoken (prefix first, then the question). kind is 'nothing' (nothing understood), 'applied',
+ * 'blocked' or 'both'. `speak: 'hospital'` means the question is the fixed hospital sentence.
  */
-export function reAskFor(prev, next, parsedReAsk = null) {
+export function reAskFor(prev, next, parsedReAsk = null, heard = null) {
   if (prev.index >= 0 || next.index >= 0) return null;
   const step = prev.prepStep;
   if (!QUESTION_STEPS.includes(step)) return null;
-  if (step === 'hospital' && next.fields.hospital === null) {
-    return { text: parsedReAsk || REASK_HOSPITAL_SPEECH, speak: 'hospital' };
-  }
-  if (next.prepStep !== step || next.fields[step] !== null) return null;
-  const changed = QUESTION_STEPS.some((id) => next.fields[id] !== prev.fields[id]);
-  return { text: (changed ? '' : NOT_HEARD) + CLIP_TEXT[STEP_CLIP[step]], speak: 'step' };
+  const said = heard || Object.fromEntries(FIELD_IDS.map((id) => [id, next.fields[id] !== prev.fields[id] ? next.fields[id] : null]));
+  const valid = (id) => optionFor(id, said[id] ?? null) !== null;
+  const others = FIELD_IDS.filter((id) => id !== step && valid(id));
+  const blocked = others.filter((id) => prev.manual[id] && prev.fields[id] !== said[id]);
+  const applied = others.filter((id) => !blocked.includes(id));
+  const moved = next.prepStep !== step;
+  const lines = moved ? [] : applied.map((id) => appliedNotice(id, said[id]));
+  lines.push(...blocked.map((id) => blockedNotice(id, prev.fields[id])));
+  if (moved && lines.length === 0) return null;
+  const hospitalAgain = !moved && step === 'hospital' && next.fields.hospital === null;
+  const hasApplied = !moved && applied.length > 0;
+  let kind = 'nothing';
+  if (hasApplied && blocked.length) kind = 'both';
+  else if (blocked.length) kind = 'blocked';
+  else if (hasApplied) kind = 'applied';
+  // Nothing understood at the hospital question keeps the fixed hospital sentence (it names the limit).
+  const prefix = lines.length ? lines.join(' ') : (hospitalAgain ? '' : NOT_HEARD);
+  const question = hospitalAgain ? (parsedReAsk || REASK_HOSPITAL_SPEECH) : CLIP_TEXT[STEP_CLIP[next.prepStep]];
+  return {
+    kind,
+    prefix,
+    question,
+    text: prefix ? `${prefix} ${question}` : question,
+    speak: hospitalAgain ? 'hospital' : 'step',
+    prefixClip: kind === 'nothing' ? 'reask-not-heard' : 'reask-notice',
+  };
 }
 const BUS_NOTE = '버스 안 안내 방송과 화면에 나오는 정류장 이름을 확인하세요. 잘 모르시겠으면 기사님께 물어보세요.';
-export const ARRIVED_TEXT = '미금역에 도착했어요. 안내를 모두 마쳤습니다.';
+export const ARRIVED_TEXT = ARRIVED_SENTENCE;
 export const TODAY_ORDER_TITLE = '오늘 순서';
 export const DEMO_NOTE = '시연용 예시 일정이에요. 실제 검사와 순서는 사람마다 달라요.';
 // Get-off alert texts (the spoken versions are the alert-* clips in clips.js).
@@ -285,29 +309,35 @@ export function nextState(state, action, route) {
       if (state.index >= 0 || !QUESTION_STEPS.includes(action.field)) return state;
       return { ...state, prepStep: action.field, editing: true, manual: { ...state.manual, [action.field]: false } };
     case 'SET_FIELDS': {
-      // Merges a parsed sentence: only valid non-null parsed values are written, and a field the
-      // user set with [수정] keeps its value.
-      // On a question screen a sentence that carried any valid value moves the wizard on: to the
-      // confirm screen after an edit that answered the edited field, else to the next unanswered one.
+      // Merges a parsed sentence: only valid non-null parsed values are written. The answer to the
+      // question on screen always applies (it replaces a button choice for that field); a value for
+      // another field never replaces a button choice. On a question screen the wizard moves on only when
+      // the question on screen was answered: to the confirm screen after an edit, else to the next
+      // unanswered question.
       const src = action.fields || {};
+      const onQuestion = state.index < 0 && QUESTION_STEPS.includes(state.prepStep);
       const fields = { ...state.fields };
-      let heardAny = false;
+      const manual = { ...state.manual };
       for (const id of FIELD_IDS) {
         const v = src[id] ?? null;
-        const valid = v !== null && optionFor(id, v);
-        if (valid) heardAny = true;
-        if (state.manual && state.manual[id]) continue;
-        if (valid) fields[id] = v;
+        if (v === null || !optionFor(id, v)) continue;
+        if (onQuestion && id === state.prepStep) {
+          fields[id] = v;
+          manual[id] = false;
+        } else if (!(state.manual && state.manual[id])) {
+          fields[id] = v;
+        }
       }
       let { prepStep, editing } = state;
-      if (state.index < 0 && QUESTION_STEPS.includes(prepStep) && heardAny) {
+      if (onQuestion && optionFor(prepStep, src[prepStep] ?? null)) {
         if (editing) {
-          if (optionFor(prepStep, src[prepStep] ?? null)) { prepStep = 'confirm'; editing = false; }
+          prepStep = 'confirm';
+          editing = false;
         } else {
           prepStep = firstUnfilled(fields) ?? 'confirm';
         }
       }
-      return { ...state, fields, prepStep, editing };
+      return { ...state, fields, manual, prepStep, editing };
     }
     case 'OPEN_COMPANION':
       return { ...state, companionOpen: true };
@@ -392,13 +422,15 @@ function boot(route, support, floor = null, area = null) {
   // Screen 1 parse state. Memory only; never persisted.
   let utterance = null;
   let badge = null;
-  let reAsk = null;
+  let reAsk = null; // text shown in the heard card after a sentence that did not settle the question
+  let reAskDecision = null; // the reAskFor() result behind it, so [다시 듣기] can say it again
   let parsing = false;
   let parseToken = 0;
-  let typedOpen = false;
+  let typedOpen = !micSupported(); // without speech recognition the typed box is there from the start
   let typedText = '';
   let listening = false;
   let listenMsg = null;
+  let listenStep = null; // the question on screen when the microphone was opened
 
   // Arrow state. `heading` is the real compass reading (null until one arrives).
   let heading = null;
@@ -442,8 +474,9 @@ function boot(route, support, floor = null, area = null) {
     utterance = null;
     badge = null;
     reAsk = null;
+    reAskDecision = null;
     typedText = '';
-    typedOpen = false;
+    typedOpen = !micSupported();
     listenMsg = null;
   }
 
@@ -453,6 +486,9 @@ function boot(route, support, floor = null, area = null) {
     // The watch belongs to one screen: leaving it (confirm, back, reset) ends it.
     if (alightPointId !== null && (currentPoint() === null || currentPoint().id !== alightPointId || state.arrived)) stopAlight();
     if (state.lastPointId !== prev.lastPointId) persist();
+    // What the microphone hears belongs to the screen it was opened on: a new screen, or an answer
+    // button pressed while listening, ends the session so a late result cannot land on the wrong screen.
+    if (prev.prepStep !== state.prepStep || prev.index !== state.index || action.type === 'ANSWER') cancelListening();
     if (prev.index < 0 && state.index >= 0) leavePrepare();
     else if (!keepHeard && prev.prepStep !== state.prepStep) {
       parseToken += 1; // a sentence still being parsed belongs to the screen that was left
@@ -460,6 +496,12 @@ function boot(route, support, floor = null, area = null) {
       clearHeard();
     }
     render();
+  }
+
+  function cancelListening() {
+    listener.cancel();
+    listening = false;
+    listenStep = null;
   }
 
   /** Leaving screen 1: drop the utterance and cancel any late parse or recognition result. */
@@ -641,6 +683,28 @@ function boot(route, support, floor = null, area = null) {
     // The finish screen has no "show this to staff" step any more, so only the closing clip plays.
     if (state.arrived) return say('arrive-main', CLIP_TEXT['arrive-main']);
     return say(p.id, p.speech);
+  }
+
+  /** Says a re-ask: the sentence in front (when there is one), then the question, as shown. */
+  function speakReAsk(d) {
+    const question = () => (d.speak === 'hospital'
+      ? say(d.question === REASK_HOSPITAL_SPEECH ? 'reask-hospital' : 'reask', d.question)
+      : sayStep());
+    return d.prefix ? speakThen(say(d.prefixClip, d.prefix), question) : question();
+  }
+
+  /** [다시 듣기]: says again what the screen shows as its key message (a re-ask, an alert, the finish text). */
+  function replayCurrent() {
+    const p = currentPoint();
+    if (!p && reAskDecision && reAsk) return speakReAsk(reAskDecision);
+    if (p && !state.arrived && alightPointId === p.id) {
+      if (alightStop && alightLevel !== 'far') {
+        const clip = alertsFor(p)[alightLevel];
+        return say(clip.clipId, clip.text);
+      }
+      if (alightFailed) return say('alert-off', CLIP_TEXT['alert-off']);
+    }
+    return sayCurrent();
   }
 
   // ------------------------------------------------------------ screens
@@ -1179,14 +1243,20 @@ function boot(route, support, floor = null, area = null) {
 
   // ------------------------------------------------------------ screen 1 input
 
+  const typedFallback = (msg) => { listenMsg = msg; typedOpen = true; render(); };
   const listener = createListener({
-    onStart: () => { listening = true; chime(settings, 'start'); render(); },
+    onStart: () => { listening = true; stopSpeaking(); chime(settings, 'start'); render(); },
     onEnd: () => { listening = false; chime(settings, 'end'); render(); },
-    onResult: (text) => { if (state.index < 0 && QUESTION_STEPS.includes(state.prepStep)) interpret(text); },
-    onDenied: () => { listenMsg = '마이크 사용이 허용되지 않았어요. 직접 입력해 주세요.'; typedOpen = true; render(); },
-    onUnsupported: () => { listenMsg = '이 기기에서는 말하기를 쓸 수 없어요. 직접 입력해 주세요.'; typedOpen = true; render(); },
-    onError: () => { listenMsg = '음성 인식에 문제가 있어요. 다시 해 보거나 직접 입력해 주세요.'; typedOpen = true; render(); },
+    onResult: (text) => {
+      // Only for the question that was on screen when the microphone opened.
+      if (state.index < 0 && QUESTION_STEPS.includes(state.prepStep) && state.prepStep === listenStep) interpret(text);
+    },
+    onDenied: () => typedFallback('마이크 사용이 허용되지 않았어요. 직접 입력해 주세요.'),
+    onBlocked: () => typedFallback('이 브라우저에서는 말하기를 쓸 수 없어요. 아래 칸에 적어 주세요.'),
+    onUnsupported: () => typedFallback('이 기기에서는 말하기를 쓸 수 없어요. 직접 입력해 주세요.'),
+    onError: () => typedFallback('음성 인식에 문제가 있어요. 다시 해 보거나 직접 입력해 주세요.'),
     onNoSpeech: () => { listenMsg = '잘 못 들었어요. 다시 눌러 말씀해 주세요.'; render(); },
+    onStartTimeout: () => { listening = false; typedFallback('말하기를 시작하지 못했어요. 아래 칸에 적어 주셔도 돼요.'); },
   });
 
   function onTalk() {
@@ -1195,31 +1265,34 @@ function boot(route, support, floor = null, area = null) {
       return;
     }
     listenMsg = null;
-    stopSpeaking();
+    listenStep = state.prepStep;
+    stopSpeaking(); // the microphone must not hear the app's own voice
     listener.start();
   }
 
   async function interpret(text) {
     const t = String(text || '').trim();
     if (!t || state.index >= 0) return;
+    const step = state.prepStep; // the answer belongs to the question on screen now
     const token = ++parseToken;
     utterance = t;
     reAsk = null;
+    reAskDecision = null;
     parsing = true;
     render();
-    const result = await parseVisit(t, { webhookUrl: WEBHOOK_URL });
-    if (token !== parseToken || state.index >= 0) return;
+    const result = await parseVisit(t, { webhookUrl: WEBHOOK_URL, step });
+    if (token !== parseToken || state.index >= 0 || state.prepStep !== step) return;
     parsing = false;
     badge = result.source === 'ai' ? '인공지능 해석' : '규칙 해석';
     typedText = '';
-    typedOpen = false;
+    typedOpen = !micSupported();
     const before = state;
     dispatch({ type: 'SET_FIELDS', fields: result.fields }, { keepHeard: true });
-    const decision = reAskFor(before, state, result.reAsk);
+    const decision = reAskFor(before, state, result.reAsk, result.fields);
     reAsk = decision ? decision.text : null;
+    reAskDecision = decision;
     if (decision) render();
-    if (!decision) sayStep();
-    else if (decision.speak === 'hospital') say(decision.text === REASK_HOSPITAL_SPEECH ? 'reask-hospital' : 'reask', decision.text);
+    if (decision) speakReAsk(decision);
     else sayStep();
   }
 
@@ -1320,7 +1393,7 @@ function boot(route, support, floor = null, area = null) {
 
   function buildHelp() {
     const card = h('div', { class: 'overlay-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': '도움 요청' },
-      h('p', { class: 'help-sentence' }, HELP_SENTENCE));
+      h('p', { class: 'help-sentence' }, helpFor(state, route, floor).sentence));
     for (const f of FIELDS) {
       const opt = optionFor(f.id, state.fields[f.id]);
       if (opt) card.append(h('p', { class: 'help-line' }, `${f.label}: ${opt.label}`));
@@ -1468,11 +1541,12 @@ function boot(route, support, floor = null, area = null) {
 
   $('btn-replay').disabled = false;
   $('btn-settings').disabled = false;
-  $('btn-replay').onclick = () => { sayCurrent(); };
+  $('btn-replay').onclick = () => { replayCurrent(); };
   $('btn-help').onclick = () => {
     openerSel = '#btn-help';
     dispatch({ type: 'OPEN_HELP' });
-    say('help-main', HELP_SPEECH);
+    const help = helpFor(state, route, floor);
+    say(help.clipId, help.speech);
   };
   $('btn-settings').onclick = () => {
     openerSel = '#btn-settings';
@@ -1499,7 +1573,7 @@ function boot(route, support, floor = null, area = null) {
   };
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (state.helpOpen) dispatch({ type: 'CLOSE_HELP' });
+    if (state.helpOpen) { stopSpeaking(); dispatch({ type: 'CLOSE_HELP' }); }
     else if (state.companionOpen) dispatch({ type: 'CLOSE_COMPANION' });
     else if (state.settingsOpen) dispatch({ type: 'CLOSE_SETTINGS' });
   });
@@ -1527,13 +1601,13 @@ function installEarlyHelp() {
   };
   btn.onclick = () => {
     overlay.replaceChildren(h('div', { class: 'overlay-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': '도움 요청' },
-      h('p', { class: 'help-sentence' }, HELP_SENTENCE),
+      h('p', { class: 'help-sentence' }, HELP_UNKNOWN_SENTENCE),
       h('button', { class: 'btn wide primary', id: 'btn-help-close', onclick: close }, '닫기')));
     overlay.hidden = false;
     document.body.classList.add('modal-open');
     setBackgroundInert(true);
     document.getElementById('btn-help-close').focus();
-    speak('help-main', HELP_SPEECH, loadState([]).settings);
+    speak('help-unknown', HELP_UNKNOWN_SPEECH, loadState([]).settings);
   };
   document.addEventListener('keydown', (e) => {
     if (!booted && e.key === 'Escape' && !overlay.hidden) close();

@@ -4,7 +4,7 @@
 //
 // Contract reply: { hospital, visit, mobility, reception, reAsk } (all five keys required; the model's reAsk text is ignored). `hospital` may be "snubh" or
 // the label in clips.js; it is normalised to the clips.js value so SET_FIELD accepts it.
-import { optionFor } from './clips.js';
+import { optionFor, ANSWER_BUTTONS } from './clips.js';
 
 export const HOSPITAL_VALUE = '분당서울대병원';
 export const HOSPITAL_REASK = '어느 병원에 가세요? 지금은 분당서울대병원 가는 길만 안내해 드릴 수 있어요.';
@@ -65,7 +65,7 @@ function mergeClauses(values) {
 }
 
 function visitClause(c) {
-  if (!/재방문|재진|다시|두\s*번째|이전|전에|다녀온|와\s*본|왔|갔|처음|첫|초진/.test(c)) return undefined;
+  if (!/재방문|재진|다시|두\s*번째|이전|전에|다녀온|[가와]\s*(?:본|봤)|왔|갔|처음|첫|초진/.test(c)) return undefined;
   if (/적\s*(이|은)?\s*없/.test(c) && /와|왔|가|갔|다녀|방문|온|본/.test(c)) {
     return negLeft(c, [/적\s*(이|은)?\s*없\S*/g]) ? UNKNOWN : 'first';
   }
@@ -73,6 +73,7 @@ function visitClause(c) {
   if (NEG.test(c)) return UNKNOWN;
   if (/재방문|재진|다시\s*(방문|가는|갑니다|가요|왔)|두\s*번째|이전에\s*(왔|갔|다녀)|전에\s*(도\s*)?(와|왔|갔|다녀)|다녀온\s*적/.test(c)) return 'return';
   if (/처음|첫\s*(방문|진료|내원|번째)|초진/.test(c)) return 'first';
+  if (/[가와]\s*(?:봤|본\s*적)/.test(c)) return 'return'; // "가 봤어요", "와 본 적 있어요"
   return undefined;
 }
 
@@ -117,8 +118,8 @@ function receptionClause(c) {
   if (/접수/.test(c) && /혼자|스스로|직접/.test(c) && /못/.test(c)) {
     return negLeft(c, [/못\S*/g]) ? UNKNOWN : 'need';
   }
-  if (/(접수|동행|도와줄\s*사람|도움)[^]*(필요\s*없|필요하지\s*않|안\s*필요|필요\s*않)/.test(c)) {
-    return negLeft(c, [/(필요\s*없|필요하지\s*않|안\s*필요|필요\s*않)\S*/g]) ? UNKNOWN : 'no';
+  if (/(접수|동행|도와줄\s*사람|도움)[^]*(필요\s*없|필요하지\s*않|안\s*필요|필요\s*않|불필요)/.test(c)) {
+    return negLeft(c, [/(필요\s*없|필요하지\s*않|안\s*필요|필요\s*않|불필요)\S*/g]) ? UNKNOWN : 'no';
   }
   if (NEG.test(c)) return UNKNOWN;
   if (/접수[^]*(혼자|스스로|직접|괜찮)|(혼자|스스로|직접)\s*(서\s*)?접수/.test(c)) return 'no';
@@ -126,16 +127,73 @@ function receptionClause(c) {
   return undefined;
 }
 
-/** Keyword rules. Returns the four fields plus `reAsk` (a question when the hospital is missing). */
-export function parseByRules(text) {
+// ---- answers to the question on screen ------------------------------------------------------
+// A short reply such as "네", "아니요" or a button's own words only means something on the screen it
+// answers, so the keyword rules (which know no screen) cannot read it. These patterns apply to the
+// WHOLE utterance (spaces and punctuation removed) and only for the step on screen. There is no cane
+// button, so "지팡이" is deliberately not understood.
+const YES = '(?:네|예|응|넵|넹|맞아요|맞습니다|그래요|그렇습니다)';
+const NO = '(?:아니요|아니오|아뇨|아니에요|아니예요|아닙니다)';
+const NEED_NONE = '(?:필요없어요|필요없습니다|필요없음|도움(?:이)?필요없어요|도움(?:이)?필요없습니다|도움(?:이)?필요없음|(?:도움(?:이)?)?불필요(?:해요|합니다)?)';
+const whole = (body) => new RegExp(`^${body}$`);
+const STEP_PATTERNS = {
+  hospital: [],
+  visit: [
+    [whole(YES), 'first'],
+    [whole(NO), 'return'],
+    [whole(`${NO}?(?:가봤|와봤|가본적있|와본적있|다녀왔)\\S*`), 'return'],
+  ],
+  mobility: [
+    [whole(NO), 'none'],
+    [whole(`${NO}?(?:안써요|안씁니다|안써|안짚어요|안타요|없어요|없습니다|괜찮아요|괜찮습니다|${NEED_NONE})`), 'none'],
+  ],
+  reception: [
+    [whole(YES), 'need'],
+    [whole(`${YES}?(?:필요해요|필요합니다|도움(?:이)?필요해요|도움(?:이)?필요합니다|도와주세요|도와줘요|부탁해요|부탁드려요|부탁합니다)`), 'need'],
+    [whole(NO), 'no'],
+    [whole(`${NO}?(?:괜찮아요|괜찮습니다|혼자할수있어요|혼자할게요|혼자서할수있어요|${NEED_NONE})`), 'no'],
+  ],
+};
+
+const squash = (s) => String(s ?? '').toLowerCase().replace(/[\s.,!?;~…'"“”‘’·\-]/g, '');
+
+/**
+ * Value of the question on screen (`step`) for a short reply: a button's own words, a bare yes or no,
+ * or a plain phrase for that question. Returns null when the text means nothing for that step.
+ */
+export function interpretForStep(step, text) {
+  const t = squash(text);
+  if (!t || !STEP_PATTERNS[step]) return null;
+  for (const [value, ui] of Object.entries(ANSWER_BUTTONS[step] || {})) {
+    if (squash(ui.label) === t) return value;
+  }
+  if (/지팡이/.test(t)) return null;
+  for (const [re, value] of STEP_PATTERNS[step]) {
+    if (re.test(t)) return value;
+  }
+  return null;
+}
+
+/** Fills the question on screen from `interpretForStep` when the other rules found no value for it. */
+function withStepAnswer(fields, text, step) {
+  if (!step || !Object.prototype.hasOwnProperty.call(fields, step) || fields[step] !== null) return fields;
+  const v = interpretForStep(step, text);
+  return v === null ? fields : { ...fields, [step]: v };
+}
+
+/**
+ * Keyword rules. Returns the four fields plus `reAsk` (a question when the hospital is missing).
+ * `step` is the question on screen (hospital, visit, mobility, reception) or null.
+ */
+export function parseByRules(text, step = null) {
   const t = typeof text === 'string' ? text : '';
   const clauses = splitClauses(t);
-  const fields = {
+  const fields = withStepAnswer({
     hospital: rulesHospital(t),
     visit: mergeClauses(clauses.map(visitClause)),
     mobility: mergeMobility(clauses.map(mobilityClause)),
     reception: mergeClauses(clauses.map(receptionClause)),
-  };
+  }, t, step);
   return { ...fields, reAsk: fields.hospital ? null : HOSPITAL_REASK };
 }
 
@@ -184,9 +242,9 @@ function withTimeout(promise, ms, onTimeout) {
  * throws: an empty webhook URL, a non-200 status, a timeout, bad JSON or a non-object reply all
  * fall back to the rules.
  */
-export async function parseVisit(text, { webhookUrl = '', fetch: fetchImpl = globalThis.fetch, timeoutMs = 6000 } = {}) {
+export async function parseVisit(text, { webhookUrl = '', fetch: fetchImpl = globalThis.fetch, timeoutMs = 6000, step = null } = {}) {
   const viaRules = () => {
-    const { reAsk, ...fields } = parseByRules(text);
+    const { reAsk, ...fields } = parseByRules(text, step);
     return { fields, reAsk, source: 'rules' };
   };
   if (!webhookUrl || typeof fetchImpl !== 'function') return viaRules();
@@ -196,7 +254,8 @@ export async function parseVisit(text, { webhookUrl = '', fetch: fetchImpl = glo
       const res = await fetchImpl(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        // `step` is an extra field: the scenario may ignore it; the step-aware reading below runs either way.
+        body: JSON.stringify(step ? { text, step } : { text }),
         signal: ctl ? ctl.signal : undefined,
       });
       if (!res || res.status !== 200) throw new Error(`status ${res && res.status}`);
@@ -208,7 +267,8 @@ export async function parseVisit(text, { webhookUrl = '', fetch: fetchImpl = glo
     const checked = validateAiReply(body);
     if (!checked) return viaRules();
     const { reAsk, ...fields } = checked;
-    return { fields, reAsk, source: 'ai' };
+    const withStep = withStepAnswer(fields, text, step);
+    return { fields: withStep, reAsk: withStep.hospital ? null : reAsk, source: 'ai' };
   } catch {
     return viaRules();
   }

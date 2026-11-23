@@ -4,12 +4,24 @@
 // folder is self-contained.
 
 import { routeStops, earlyText } from './alight.js';
+import { digitsToHangul } from './korean.js';
 
+// Help card sentences. The spoken form is the shown sentence with digits written as Hangul numerals
+// (so TTS reads 일동 일층), so what is heard is exactly what is shown. help.js picks the variant.
 export const HELP_SENTENCE = '분당서울대병원 첫 방문입니다. 1동 1층 처음오신 창구 위치를 알려주세요.';
-// Spoken form of HELP_SENTENCE: first person, numbers in Hangul so TTS reads them as 일동 일층.
-export const HELP_SPEECH = '저는 분당서울대병원에 처음 왔습니다. 일동 일층 처음 오신 창구가 어디인지 알려 주세요.';
+export const HELP_SPEECH = digitsToHangul(HELP_SENTENCE);
+export const HELP_RETURN_SENTENCE = '분당서울대병원에 다시 왔습니다. 접수하는 곳 위치를 알려주세요.';
+export const HELP_RETURN_SPEECH = digitsToHangul(HELP_RETURN_SENTENCE);
+// Used while the visit answer is still unknown (and before the route data has loaded).
+export const HELP_UNKNOWN_SENTENCE = '분당서울대병원에 가려고 합니다. 가는 길을 알려주세요.';
+export const HELP_UNKNOWN_SPEECH = digitsToHangul(HELP_UNKNOWN_SENTENCE);
 // Spoken when the hospital is missing; must equal intent.js HOSPITAL_REASK (checked by a test).
 export const REASK_HOSPITAL_SPEECH = '어느 병원에 가세요? 지금은 분당서울대병원 가는 길만 안내해 드릴 수 있어요.';
+
+// Spoken when nothing was understood (also shown, in front of the question that is asked again).
+export const NOT_HEARD_SENTENCE = '잘 알아듣지 못했어요.';
+// The finish screen's sentence and the arrive-main clip are the same words.
+export const ARRIVED_SENTENCE = '미금역에 도착했어요. 안내를 모두 마쳤습니다. 수고 많으셨어요.';
 
 /** The four visit fields in screen order. `value` matches the AI contract in the design. */
 export const FIELDS = [
@@ -55,8 +67,12 @@ export const FIXED_CLIPS = [
   { clipId: 'prep-checklist', text: '집을 나서기 전에 신분증과 진료의뢰서를 꼭 챙기세요.' },
   { clipId: 'prep-confirm', text: '이 내용이 맞으세요?' },
   { clipId: 'help-main', text: HELP_SPEECH },
+  { clipId: 'help-return', text: HELP_RETURN_SPEECH },
+  { clipId: 'help-unknown', text: HELP_UNKNOWN_SPEECH },
   { clipId: 'reask-hospital', text: REASK_HOSPITAL_SPEECH },
-  { clipId: 'arrive-main', text: '안내를 모두 마쳤습니다. 수고 많으셨어요.' },
+  { clipId: 'reask-not-heard', text: NOT_HEARD_SENTENCE },
+  // Same words as the finish screen shows (app.js ARRIVED_TEXT).
+  { clipId: 'arrive-main', text: ARRIVED_SENTENCE },
   { clipId: 'ui-resume', text: '지난번에 멈춘 곳부터 이어서 안내해 드릴게요.' },
   // Large-screen easy mode: one clip per question screen and per action screen.
   { clipId: 'q-hospital', text: '어느 병원에 가세요?' },
