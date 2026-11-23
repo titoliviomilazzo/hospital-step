@@ -63,6 +63,8 @@ body.modal-open { overflow: hidden; }
   font-size: var(--fs-instr); line-height: 1.3; margin: 8px 0 12px; font-weight: 800;
   word-break: keep-all; overflow-wrap: break-word;
 }
+.instruction.compact { font-size: 26px; line-height: 1.25; margin: 0 0 6px; }
+:root.large .instruction.compact { font-size: 32px; }
 h2 { font-size: 1.1em; margin: 0 0 8px; }
 .muted { color: var(--muted); margin: 4px 0; font-size: 20px; }
 .note { margin: 4px 0; font-size: 20px; font-weight: 700; }
@@ -257,6 +259,28 @@ textarea {
 
 #live { margin-bottom: 8px; }
 #screen { min-width: 0; }
+
+/* Walk points with a target: the arrow on the left, straight-line distance and target name on the right. */
+.picto-box.nav-box { width: 100%; max-width: none; margin: 0; gap: 4px; }
+.nav-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.nav-row .arrow-holder { flex: 0 0 116px; width: 116px; }
+.nav-row .arrow-svg { width: 112px; height: 112px; }
+.nav-row .arrow-holder canvas { width: 112px; }
+.nav-notes { width: 100%; display: flex; flex-direction: column; gap: 2px; }
+.nav-notes .note { margin: 0; text-align: center; }
+.nav-pic { flex: 0 0 120px; width: 120px; }
+.nav-pic .picto { width: 100%; height: auto; }
+.nav-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.nav-row .nav-dist { margin: 0; font-size: 26px; text-align: left; }
+.picto-box .nav-side .picto-caption { font-size: 22px; text-align: left; overflow-wrap: anywhere; }
+
+/* Outdoor map (walk, wait for the bus, ride). */
+.area-card { padding: 8px 12px; min-width: 0; overflow: hidden; align-items: stretch; }
+.area-map { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; min-width: 0; }
+.area-svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.area-caption { margin: 0; font-size: 18px; font-weight: 700; color: var(--muted); overflow-wrap: anywhere; }
+.ride-count { margin: 4px 0 0; font-size: 30px; font-weight: 900; text-align: center; }
+.ride-next { margin: 0; font-size: 22px; font-weight: 800; text-align: center; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

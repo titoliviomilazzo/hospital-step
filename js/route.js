@@ -72,6 +72,7 @@ export function validateRoute(obj) {
         c.lat >= -90 && c.lat <= 90 && c.lon >= -180 && c.lon <= 180 &&
         isNonEmptyString(c.name) && isNonEmptyString(c.source) && STATUSES.includes(c.status);
       if (!ok) errors.push(`${tag}.target must be {lat, lon, name, source, status}`);
+      else if (c.approx !== undefined && typeof c.approx !== 'boolean') errors.push(`${tag}.target.approx must be a boolean`);
     }
     for (const key of ['alertCoord', 'boardCoord']) {
       if (p[key] === undefined) continue;

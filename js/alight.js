@@ -181,13 +181,13 @@ export function geolocationSource(nav = globalThis.navigator) {
 /**
  * Starts watching. `target` is {lat, lon}; with `busRoute` the stop-aware rule replaces the plain
  * distance rule. `onLevel('early' | 'near' | 'now')` fires only when the level
- * changes; `onError('denied' | 'unavailable')` fires once, after which the watch is stopped.
+ * changes; `onFix({lat, lon, accuracy})` fires for every fix (for the map); `onError('denied' | 'unavailable')` fires once, after which the watch is stopped.
  * `source` overrides the real geolocation (simulation, tests). While active a screen wake lock
  * is held (best effort) and re-requested when the page becomes visible again.
  * Returns {stop()}.
  */
 export function startAlightWatch({
-  target, busRoute = null, onLevel, onError, source = null,
+  target, busRoute = null, onLevel, onError, onFix = null, source = null,
   nav = globalThis.navigator, doc = globalThis.document,
 }) {
   let level = 'far';
@@ -251,6 +251,7 @@ export function startAlightWatch({
     if (!active) return;
     gotFix = true;
     timeouts = 0;
+    if (onFix) onFix(pos); // the map follows the same fixes; they are not kept anywhere
     const next = busRoute
       ? stopAlertLevel(pos, busRoute, level)
       : alertLevel(haversineMeters(pos, target), pos.accuracy, level);

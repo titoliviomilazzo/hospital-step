@@ -150,7 +150,15 @@
       "checkedOn": null,
       "source": "분당서울대병원 누리집(snubh.org) 외래진료안내: 처음오신 창구는 1동 1층",
       "gap": false,
-      "detailSpeech": "정류장에서 일동까지는 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요."
+      "detailSpeech": "정류장에서 일동까지는 병원 안내 표지판을 따라가세요. 잘 모르시겠으면 병원 직원에게 물어보세요.",
+      "target": {
+        "lat": 37.351637,
+        "lon": 127.1231548,
+        "name": "1동 출입구",
+        "approx": true,
+        "source": "층별안내 평면도의 출입구 표시(가로 47%, 세로 76%)를 OpenStreetMap 건물 윤곽(way 469428749)에 맞춰 옮긴 값. 회전 0도, 축척 0.26 m/px 고정, 이동량만 계산, 윤곽 사이 평균 거리 4.5 m. 대략값, 2026-11-23 계산, © OpenStreetMap 기여자 ODbL",
+        "status": "현장 미확인"
+      }
     },
     {
       "id": "I1",
@@ -490,14 +498,21 @@
       "id": "R4",
       "stage": "return",
       "order": 17,
-      "display": "미금역에 도착했어요.",
-      "speech": "미금역에 도착했어요.",
+      "display": "미금역 2번 출구로 가세요.",
+      "speech": "미금역 이번 출구로 가세요.",
       "detail": "",
       "sign": null,
       "confirmLabel": "미금역에 왔어요",
       "kind": "walk",
       "busNumber": null,
       "coord": null,
+      "target": {
+        "lat": 37.3501993,
+        "lon": 127.1095499,
+        "name": "미금역 2번 출구",
+        "source": "OpenStreetMap 노드 3406781696(subway_entrance ref 2), 2026-11-23 조회, © OpenStreetMap 기여자 ODbL",
+        "status": "현장 미확인"
+      },
       "sim": {
         "x": 10,
         "y": 80

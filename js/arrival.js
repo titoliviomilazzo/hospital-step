@@ -50,6 +50,28 @@ export function parseLocations(reply, { loopStops, boardSeq } = {}) {
 }
 
 /**
+ * Where the buses are on the loop: the stop numbers (stationSeq 1..loopStops) of every bus in the
+ * reply, sorted and without repeats; [] when there is none or the reply is unusable. Used to draw the
+ * buses on the map, next to parseLocations() which only keeps the distance to the boarding stop.
+ */
+export function parseBusSeqs(reply, { loopStops } = {}) {
+  if (!Number.isInteger(loopStops) || loopStops < 1) return [];
+  const root = reply && typeof reply === 'object' ? (reply.response || reply) : null;
+  if (!root) return [];
+  const body = root.msgBody && typeof root.msgBody === 'object' ? root.msgBody : null;
+  let list = body ? body.busLocationList : root.busLocationList;
+  if (list && !Array.isArray(list)) list = [list];
+  if (!Array.isArray(list)) return [];
+  const seqs = new Set();
+  for (const bus of list) {
+    if (!bus || typeof bus !== 'object') continue;
+    const seq = num(bus.stationSeq);
+    if (seq !== null && Number.isInteger(seq) && seq >= 1 && seq <= loopStops) seqs.add(seq);
+  }
+  return [...seqs].sort((a, b) => a - b);
+}
+
+/**
  * The point whose `arrival` config (and `hours`) the screen at `index` uses: the point itself when it
  * has `arrival`; else, when it has a walking `target` (the way to a bus stop), the NEXT point if that
  * has `arrival` (O1 -> O2, R1 -> R2); else null.
@@ -85,7 +107,16 @@ export function locationText(parsed, routeName = '7-1', hasHours = true, stopNam
 }
 
 /** POSTs the request and resolves to the parsed bus position, or null on any failure or empty reply. */
-export async function fetchArrival(url, { stationId, routeId, loopStops, boardSeq }, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
+export async function fetchArrival(url, cfg, options) {
+  const detail = await fetchArrivalDetail(url, cfg, options);
+  return detail ? detail.parsed : null;
+}
+
+/**
+ * Same request as fetchArrival, resolving to {parsed, seqs} (parsed as above, seqs from parseBusSeqs),
+ * or null on any failure. One request serves both the sentence and the buses on the map.
+ */
+export async function fetchArrivalDetail(url, { stationId, routeId, loopStops, boardSeq }, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
   const ctl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = setTimeout(() => { if (ctl) ctl.abort(); }, timeoutMs);
   let guard = null;
@@ -100,7 +131,8 @@ export async function fetchArrival(url, { stationId, routeId, loopStops, boardSe
       new Promise((_, rej) => { guard = setTimeout(() => rej(new Error('timeout')), timeoutMs + 50); }),
     ]);
     if (!res.ok) return null;
-    return parseLocations(await res.json(), { loopStops, boardSeq });
+    const reply = await res.json();
+    return { parsed: parseLocations(reply, { loopStops, boardSeq }), seqs: parseBusSeqs(reply, { loopStops }) };
   } catch {
     return null;
   } finally {

@@ -14,7 +14,8 @@ import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO
 import { POSITION_MSG, createPositionController, navItems, targetAngle, targetCaption } from './navarrow.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
 import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './floor.js';
-import { arrivalPointFor, fetchArrival, locationText, REFRESH_MS, stopLabel } from './arrival.js';
+import { arrivalPointFor, fetchArrivalDetail, locationText, REFRESH_MS, stopLabel } from './arrival.js';
+import { loadArea, renderAreaMap, sceneFor, ridingProgress, walkStart, remainingText, nextStopText } from './areamap.js';
 import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
@@ -357,7 +358,7 @@ let booted = false;
 
 // ---------------------------------------------------------------- app
 
-function boot(route, support, floor = null) {
+function boot(route, support, floor = null, area = null) {
   booted = true;
   const $ = (id) => document.getElementById(id);
   const stored = loadState(route.points.map((p) => p.id));
@@ -395,12 +396,16 @@ function boot(route, support, floor = null) {
   let alightPointId = null; // the route point the watch belongs to
   let alightLevel = 'far'; // 'far' | 'near' | 'now'
   let alightFailed = false; // permission denied or no position available
+  let ridePos = null; // latest fix of the get-off watch, for the map only; memory only, never stored or sent
+  let rideProgress = null; // {lastIndex, atStop, nextIndex, remaining} along the stops of the ride
+  let areaHost = null; // the element that holds the outdoor map currently on screen
 
   // Bus arrival info on a point that has `arrival` (only when ARRIVAL_URL is configured).
   let arrivalPointId = null;
   let arrivalTimer = null;
   let arrivalToken = 0;
   let arrivalMsg = null;
+  let arrivalSeqs = []; // loop stop numbers of the live buses (for the map)
 
   const say = (clipId, text) => speak(clipId, text, settings);
   preloadManifest();
@@ -445,6 +450,8 @@ function boot(route, support, floor = null) {
     alightPointId = null;
     alightLevel = 'far';
     alightFailed = false;
+    ridePos = null;
+    rideProgress = null;
   }
 
   /** Taps [내릴 곳 가까워지면 알려 주기]: starts the watch; the browser asks for location itself. */
@@ -469,6 +476,15 @@ function boot(route, support, floor = null) {
       target: p.alertCoord,
       busRoute: p.busRoute || null,
       source,
+      onFix: (fix) => {
+        if (alightPointId !== p.id) return;
+        ridePos = fix;
+        if (p.busRoute) {
+          const stops = p.busRoute.stops.filter((st) => st.seq <= p.busRoute.alightSeq);
+          rideProgress = ridingProgress(fix, stops, p.busRoute.alightSeq, rideProgress);
+        }
+        redrawArea(); // only the map and its count line change, so open details and focus stay
+      },
       onLevel: (level) => {
         if (alightPointId !== p.id) return;
         alightLevel = level;
@@ -515,6 +531,7 @@ function boot(route, support, floor = null) {
     } else if (alightStop) {
       kids.push(h('p', { class: 'alight-status', id: 'alight-status', role: 'status' }, ALERT_WAITING));
     }
+    if (alightStop) kids.push(...rideTextNodes(p));
     if (alightFailed) kids.push(h('p', { class: 'alight-banner off', id: 'alight-off', role: 'status' }, ALERT_OFF_TEXT));
     if (alightStop) {
       kids.push(h('button', { class: 'btn small ghost', id: 'btn-alight-off', onclick: () => {
@@ -537,6 +554,7 @@ function boot(route, support, floor = null) {
     arrivalPointId = null;
     arrivalToken += 1;
     arrivalMsg = null;
+    arrivalSeqs = [];
   }
 
   /** Starts the 30 s refresh on a point with `arrival`; ends it on any other screen. */
@@ -552,8 +570,14 @@ function boot(route, support, floor = null) {
     arrivalPointId = wanted.id;
     const token = arrivalToken;
     const load = async () => {
-      const parsed = await fetchArrival(ARRIVAL_URL, wanted.arrival);
+      const detail = await fetchArrivalDetail(ARRIVAL_URL, wanted.arrival);
       if (token !== arrivalToken) return;
+      const parsed = detail ? detail.parsed : null;
+      const seqs = detail ? detail.seqs : [];
+      if (seqs.join(',') !== arrivalSeqs.join(',')) {
+        arrivalSeqs = seqs;
+        redrawArea();
+      }
       const text = locationText(parsed, wanted.arrival.routeName, Boolean(wanted.hours), wanted.stop);
       if (text !== arrivalMsg) {
         arrivalMsg = text;
@@ -805,9 +829,19 @@ function boot(route, support, floor = null) {
 
   /** Lines under the arrow (distance, accuracy, underground notes) for the current target point. */
   function navStatusNodes(p) {
+    // Simulation: the dot stays at the point's start (a fixed place), so the distance can be shown too.
+    const start = settings.sim ? walkStart(route, area, state.index) : null;
+    const here = settings.sim ? (start ? { lat: start.lat, lon: start.lon, accuracy: 10 } : null) : pos;
     return navItems({
-      pos, target: p.target, watching: positionCtl.active, posMsg, underground: p.id === 'O1',
+      pos: here, target: p.target, watching: !settings.sim && positionCtl.active, posMsg: settings.sim ? null : posMsg,
+      underground: !settings.sim && p.id === 'O1',
     }).map((x) => h('p', { class: x.main ? 'nav-dist' : 'note' }, x.text));
+  }
+
+  /** The two parts of the status: the one big line (distance) next to the arrow, the notes below the row. */
+  function navParts(p) {
+    const nodes = navStatusNodes(p);
+    return { main: nodes.filter((n) => n.classList.contains('nav-dist')), notes: nodes.filter((n) => !n.classList.contains('nav-dist')) };
   }
 
   /** Rewrites the status area in place (no full render, so the page does not jump). */
@@ -815,7 +849,10 @@ function boot(route, support, floor = null) {
     const p = currentPoint();
     const box = typeof document !== 'undefined' ? document.getElementById('nav-status') : null;
     if (!p || !p.target || !box) return;
-    box.replaceChildren(...navStatusNodes(p));
+    const parts = navParts(p);
+    box.replaceChildren(...parts.main);
+    const notes = document.getElementById('nav-notes');
+    if (notes) notes.replaceChildren(...parts.notes);
   }
 
   function mountArrow(holder, angle) {
@@ -861,6 +898,74 @@ function boot(route, support, floor = null) {
     const changed = nextStep !== floorStep;
     floorStep = nextStep;
     return changed;
+  }
+
+  /** The map of the current point (walk, wait or ride) as a scene, or null when it has none. */
+  function areaSceneFor(p) {
+    if (!area || !p) return null;
+    syncFloorStep();
+    const sim = settings.sim;
+    // The map turns to the heading only where an arrow can point (real mode; in simulation, with the slider).
+    const turns = Boolean(p.target) && (!sim || Boolean(simArrow(route, state.index, 0)));
+    return sceneFor(route, area, state.index, {
+      pos: p.target ? (sim ? null : pos) : ridePos,
+      sim,
+      headingDeg: turns ? floorStep : null,
+      progress: rideProgress,
+      busSeqs: arrivalSeqs,
+    });
+  }
+
+  /** True when the current point gets an outdoor map. */
+  function areaShown(p) {
+    return Boolean(area && p && (p.target || p.arrival || p.busRoute));
+  }
+
+  /** The outdoor map card, or null. */
+  function areaPanel(p) {
+    const scene = areaSceneFor(p);
+    if (!scene) return null;
+    areaHost = h('div', { class: 'area-host' }, svgNode(renderAreaMap(area, scene.opts)));
+    return h('div', { class: 'card area-card', id: 'area-panel' }, areaHost);
+  }
+
+  /** Count and next-stop lines of a ride, shown inside the get-off panel (above the bar). */
+  function rideTextNodes(p) {
+    if (!p.busRoute) return [];
+    const stops = p.busRoute.stops.filter((st) => st.seq <= p.busRoute.alightSeq);
+    const count = remainingText(rideProgress);
+    const next = nextStopText(rideProgress, stops);
+    return [
+      count ? h('p', { class: 'ride-count', id: 'ride-count' }, count) : null,
+      next ? h('p', { class: 'ride-next', id: 'ride-next' }, next) : null,
+    ].filter(Boolean);
+  }
+
+  /** Rewrites the two ride lines in place (the panel's buttons are never replaced under a finger). */
+  function updateRideText(p) {
+    const box = document.getElementById('alight-panel');
+    if (!box || !alightStop) return;
+    const nodes = rideTextNodes(p);
+    const oldC = document.getElementById('ride-count');
+    const oldN = document.getElementById('ride-next');
+    const same = (oldC ? oldC.textContent : '') === (nodes.find((n) => n.id === 'ride-count')?.textContent || '')
+      && (oldN ? oldN.textContent : '') === (nodes.find((n) => n.id === 'ride-next')?.textContent || '');
+    if (same) return;
+    if (oldC) oldC.remove();
+    if (oldN) oldN.remove();
+    const anchor = box.querySelector('#alight-banner, #alight-status');
+    if (anchor) anchor.after(...nodes);
+    else box.prepend(...nodes);
+  }
+
+  /** Redraws only the map (no full render, so the page does not jump back to the top). */
+  function redrawArea() {
+    const p = currentPoint();
+    if (!area || !p || !areaHost || !areaHost.isConnected) return;
+    const scene = areaSceneFor(p);
+    if (!scene) return;
+    areaHost.replaceChildren(svgNode(renderAreaMap(area, scene.opts)));
+    if (scene.kind === 'ride') updateRideText(p);
   }
 
   /** Redraws only the floor figure (no full render, so the page does not jump back to the top). */
@@ -918,6 +1023,7 @@ function boot(route, support, floor = null) {
             sim = simReducer(sim, { type: 'SET_HEADING', value: e.target.value });
             readout.textContent = `${sim.heading}도`;
             refreshArrow();
+            if (syncFloorStep()) redrawArea();
           } }),
         readout,
       );
@@ -936,7 +1042,10 @@ function boot(route, support, floor = null) {
         refreshArrow();
         updateNavStatus();
         // The map redraws only when the 15-degree step changes (see quantiseHeading).
-        if (!settings.sim && syncFloorStep()) redrawFloor();
+        if (!settings.sim && syncFloorStep()) {
+          redrawFloor();
+          redrawArea();
+        }
       }
     },
     onUnavailable: (reason) => {
@@ -962,6 +1071,7 @@ function boot(route, support, floor = null) {
       else {
         refreshArrow();
         updateNavStatus();
+        redrawArea();
       }
     },
     onUnavailable: (reason) => {
@@ -1045,24 +1155,36 @@ function boot(route, support, floor = null) {
 
   /** The picture box: a pictogram by point kind, or the big arrow when one can be drawn. */
   function navStatusBox(p) {
-    return h('div', { id: 'nav-status', role: 'status' }, ...navStatusNodes(p));
+    return h('div', { id: 'nav-status', role: 'status' }, ...navParts(p).main);
+  }
+
+  function navNotesBox(p) {
+    return h('div', { id: 'nav-notes', class: 'nav-notes' }, ...navParts(p).notes);
   }
 
   function pictureBox(p, compact = false) {
     const spec = pictoSpec(p);
     const box = h('div', { class: compact ? 'picto-box compact' : 'picto-box', id: 'arrow-box' });
     const info = arrowInfo();
+    const showNav = Boolean(p.target) && (Boolean(currentTarget()) || settings.sim);
     if (info) {
       const holder = h('div', { class: 'arrow-holder', id: 'arrow-holder' });
       box.classList.add('arrow-mode');
       box.append(holder);
       mountArrow(holder, info.angle);
-      if (p.target && currentTarget()) {
-        box.append(navStatusBox(p), h('p', { class: 'picto-caption' }, targetCaption(p.target)));
+      if (showNav) {
+        // Arrow on the left, straight-line distance and target name on the right: one short row; notes below.
+        box.classList.add('nav-box');
+        box.replaceChildren(h('div', { class: 'nav-row' }, holder,
+          h('div', { class: 'nav-side' }, navStatusBox(p), h('p', { class: 'picto-caption' }, targetCaption(p.target)))), navNotesBox(p));
       } else if (spec.label) box.append(h('p', { class: 'picto-caption' }, spec.label));
     } else {
-      box.append(svgNode(pictoSvg(spec)));
-      if (currentTarget()) box.append(navStatusBox(p));
+      if (showNav) {
+        // No arrow yet: the picture on the left, the status (finding, notes) on the right.
+        box.classList.add('nav-box');
+        box.append(h('div', { class: 'nav-row' }, h('div', { class: 'nav-pic' }, svgNode(pictoSvg(spec))),
+          h('div', { class: 'nav-side' }, navStatusBox(p))), navNotesBox(p));
+      } else box.append(svgNode(pictoSvg(spec)));
     }
     return box;
   }
@@ -1082,13 +1204,14 @@ function boot(route, support, floor = null) {
       // picture below it shrinks to the compact size.
       const planFirst = showsFloorMap(p);
       if (planFirst) main.append(floorPanel());
-      main.append(pictureBox(p, Boolean(p.alertCoord) || planFirst));
-      if (arrivalMsg && p.target && !p.arrival && arrivalPointFor(route, state.index)) main.append(arrivalPanel());
+      main.append(pictureBox(p, Boolean(p.alertCoord) || planFirst || areaShown(p)));
       // Real mode: the hospital's own number as well. No live position is ever claimed.
       if (!settings.sim && p.stage === 'indoor' && Number.isInteger(p.facility)) {
         main.append(h('p', { class: 'floor-ref', id: 'floor-ref' }, `병원 층별 안내 ${p.facility}번`));
       }
-      if (!arrowInfo()) main.append(h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK));
+      // On a target point the arrow button comes first (the sign note moves below it).
+      const signNote = arrowInfo() ? null : h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK);
+      if (signNote && !currentTarget()) main.append(signNote);
       const floorTurns = !settings.sim && planFirst;
       if (currentTarget()) {
         // Target point: one button starts the compass and the position watch together.
@@ -1101,6 +1224,11 @@ function boot(route, support, floor = null) {
       }
       // On the floor map a refused or missing compass is not an error: the map just stays north up.
       if (compassMsg && !settings.sim && !planFirst && !currentTarget()) main.append(h('p', { class: 'note', role: 'status' }, compassMsg));
+      if (signNote && currentTarget()) main.append(signNote);
+      // Target points: the bus position panel comes after the button, so the button stays above the bar.
+      if (arrivalMsg && p.target && !p.arrival && arrivalPointFor(route, state.index)) main.append(arrivalPanel());
+      const outdoorMap = areaPanel(p);
+      if (outdoorMap) main.append(outdoorMap);
       if (p.gap) main.append(h('p', { class: 'warn', id: 'gap-warning', role: 'note' }, '이 구간은 끊어진 곳이 있어요. 우회하거나 직원에게 물어보세요.'));
     }
     if (settings.sim && !arrivedHere && !showsFloorMap(p)) main.append(simPanel(p));
@@ -1219,6 +1347,10 @@ function boot(route, support, floor = null) {
     if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
     else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
 
+    // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
+    // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
+    $('instruction').classList.toggle('compact', Boolean(p && p.alertCoord && alightStop));
+    areaHost = null; // set again only when this screen builds a map
     syncArrival(p);
     syncCompass(p);
     syncPosition(p);
@@ -1386,7 +1518,14 @@ async function start() {
   } catch {
     floor = null;
   }
-  boot(route, support, floor);
+  // The outdoor map is optional too: without it only the map is missing.
+  let area = null;
+  try {
+    area = await loadArea('data/area.migeum-snubh.json');
+  } catch {
+    area = null;
+  }
+  boot(route, support, floor, area);
 }
 
 if (typeof document !== 'undefined') start();

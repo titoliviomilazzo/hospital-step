@@ -40,11 +40,29 @@ export function roundDistanceM(m) {
   return Math.round(m / step) * step;
 }
 
-/** The line under the arrow: "정류장까지 약 120 m", or the near sentence within 25 m. null if unknown. */
-export function distanceText(m) {
+/**
+ * Generic noun for the target in the distance wording: "정류장" for a target named "...정류장" (and when
+ * there is no target, the original behaviour), "출구" for "...출구", else "목적지".
+ */
+export function targetNoun(target) {
+  const name = target && typeof target.name === 'string' ? target.name.trim() : '';
+  if (!name || name.endsWith('정류장')) return '정류장';
+  return name.endsWith('출구') ? '출구' : '목적지';
+}
+
+/** "정류장 근처에 왔어요." (noun-specific for other targets). */
+export function nearText(target) {
+  return `${targetNoun(target)} 근처에 왔어요.`;
+}
+
+/**
+ * The line next to the arrow: "직선 거리 약 100 m" (a straight line, not a walking route), or the near
+ * sentence within 25 m. null if unknown. `target` (optional) picks the noun of the near sentence.
+ */
+export function distanceText(m, target) {
   if (!Number.isFinite(m)) return null;
-  if (m <= NEAR_TARGET_M) return NEAR_TEXT;
-  return `정류장까지 약 ${roundDistanceM(m)} m`;
+  if (m <= NEAR_TARGET_M) return nearText(target);
+  return `직선 거리 약 ${roundDistanceM(m)} m`;
 }
 
 /** Warning when the fix is not precise enough to trust the arrow; null otherwise. */
@@ -65,7 +83,7 @@ export function navItems({ pos, target, watching, posMsg, underground }) {
   const items = [];
   if (posMsg) items.push({ text: posMsg, main: false });
   else if (isFix(pos)) {
-    const d = distanceText(targetDistanceM(pos, target));
+    const d = distanceText(targetDistanceM(pos, target), target);
     if (d) items.push({ text: d, main: true });
     const a = accuracyNote(pos.accuracy);
     if (a) items.push({ text: a, main: false });
