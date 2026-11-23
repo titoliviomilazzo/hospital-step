@@ -333,6 +333,20 @@ function setBackgroundInert(on) {
   }
 }
 
+/** Keeps the page's bottom padding equal to the bar's real height (--bar-real). */
+function syncBarHeight() {
+  const bar = document.querySelector('.bar');
+  if (!bar || !document.documentElement) return;
+  document.documentElement.style.setProperty('--bar-real', `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+}
+let barObserver = null;
+function watchBar() {
+  const bar = document.querySelector('.bar');
+  if (barObserver || !bar || typeof ResizeObserver === 'undefined') return;
+  barObserver = new ResizeObserver(syncBarHeight);
+  barObserver.observe(bar);
+}
+
 /** Sets the one persistent instruction heading (inside the aria-live region) only when it changes. */
 function setInstruction(text) {
   const el = document.getElementById('instruction');
@@ -1233,6 +1247,8 @@ function boot(route, support, floor = null) {
     primary.classList.toggle('vacant', !bp.visible);
     primary.disabled = !bp.visible;
     primary.setAttribute('aria-hidden', bp.visible ? 'false' : 'true');
+    syncBarHeight();
+    watchBar();
     renderOverlays();
   }
 

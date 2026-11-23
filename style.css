@@ -55,7 +55,7 @@ body.modal-open { overflow: hidden; }
 
 .main {
   max-width: 640px; margin: 0 auto;
-  padding: calc(var(--top-h) + 12px) 16px calc(var(--bar-h) + env(safe-area-inset-bottom) + 24px);
+  padding: calc(var(--top-h) + 12px) 16px calc(var(--bar-real, var(--bar-h)) + 24px);
   outline: none;
 }
 .stack { display: flex; flex-direction: column; gap: 16px; }
@@ -109,17 +109,17 @@ h2 { font-size: 1.1em; margin: 0 0 8px; }
 .confirm-value.unknown { color: var(--muted); }
 .edit-btn { min-height: 64px; min-width: 88px; font-size: 24px; flex: 0 0 auto; }
 
-/* Question screens: hero illustration above the choices. Its height is tied to the viewport so the
-   answer buttons stay on screen: at 375x812 the budget above the fold is 812 - 100 (header) - 12
-   - 168 (bar) - 24 = 508px, minus the instruction (up to 115px with two lines), 16px gaps and the
-   answer buttons (80px each + 12px gaps). Mobility has three buttons (264px), so its hero is the
-   smallest; the fallback height is used where svh or clamp is not supported. */
+/* Question screens: a compact hero illustration above the choices (72px), so the answers fit above the bar. */
 .hero { display: flex; justify-content: center; align-items: center; gap: 12px; }
 .hero svg { height: var(--hero-h, 96px); width: auto; aspect-ratio: 1 / 1; max-width: 45%; flex: 0 1 auto; }
-.hero-hospital { --hero-h: 160px; --hero-h: clamp(80px, calc(100svh - 520px), 200px); }
-.hero-visit { --hero-h: 120px; --hero-h: clamp(80px, calc(100svh - 680px), 200px); }
-.hero-mobility { --hero-h: 88px; --hero-h: clamp(80px, calc(100svh - 724px), 200px); }
-.hero-reception { --hero-h: 120px; --hero-h: clamp(80px, calc(100svh - 630px), 200px); }
+/* Compact on every question screen: the answer buttons must stay above the bar on small phones. */
+.hero svg { --hero-h: 72px; }
+.hero-mobility { display: none; } /* the three answer buttons already carry the walker and wheelchair icons */
+/* Short phones (iPhone SE + browser chrome): drop the hero and the dots, the progress number stays. */
+@media (max-height: 640px) {
+  :root { --top-h: 68px; }
+  .hero, .dots { display: none; }
+}
 .has-heard .hero { display: none; } /* the heard-text box takes the room, so every choice stays reachable */
 .heard { gap: 4px; padding: 8px 12px; }
 .heard-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -212,7 +212,6 @@ output { font-weight: 700; font-size: 20px; }
 
 .bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  height: calc(var(--bar-h) + env(safe-area-inset-bottom));
   padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column; gap: 8px;
   background: #fff; border-top: 2px solid var(--line);
@@ -221,8 +220,8 @@ output { font-weight: 700; font-size: 20px; }
 .bar-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .bar .btn { width: 100%; min-height: 64px; font-size: 24px; }
 .bar .primary { flex: 1; min-height: 80px; font-size: 28px; line-height: 1.2; }
-/* No primary action on this screen: keep the space so the bar looks the same everywhere. */
-.bar .primary.vacant { visibility: hidden; }
+/* No primary action on this screen: it takes no room, so the bar is a single row and nothing hides under it. */
+.bar .primary.vacant { display: none; }
 
 .overlay {
   position: fixed; inset: 0; z-index: 50; overflow-y: auto;
