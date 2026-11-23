@@ -115,7 +115,7 @@
       }
     },
     "help-main": {
-      "text": "저는 분당서울대병원에 처음 왔습니다. 일동 일층 처음 오신 창구가 어디인지 알려 주세요.",
+      "text": "분당서울대병원 첫 방문입니다. 일동 일층 처음오신 창구 위치를 알려주세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
@@ -123,7 +123,7 @@
       }
     },
     "arrive-main": {
-      "text": "안내를 모두 마쳤습니다. 수고 많으셨어요.",
+      "text": "미금역에 도착했어요. 안내를 모두 마쳤습니다. 수고 많으셨어요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
@@ -435,7 +435,7 @@
       }
     },
     "R4": {
-      "text": "미금역에 도착했어요.",
+      "text": "미금역 이번 출구로 가세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
@@ -452,6 +452,166 @@
     },
     "alert-return-near": {
       "text": "다음 정류장, 미금역에서 내려요. 하차 벨을 눌러 주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-return": {
+      "text": "분당서울대병원에 다시 왔습니다. 접수하는 곳 위치를 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-unknown": {
+      "text": "분당서울대병원에 가려고 합니다. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "reask-not-heard": {
+      "text": "잘 알아듣지 못했어요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-O1": {
+      "text": "미금역 삼번 출구 정류장을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-O2": {
+      "text": "미금역 삼번 출구 정류장을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-O3": {
+      "text": "서울대병원 정류장을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-O4": {
+      "text": "일동 출입구를 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I1": {
+      "text": "처음 오신 창구를 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I2": {
+      "text": "처음 오신 창구를 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I3": {
+      "text": "노인의료센터를 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I4": {
+      "text": "노인의료센터를 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I5": {
+      "text": "원무 수납을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I6": {
+      "text": "채혈실을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I7": {
+      "text": "영상의학과를 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I8": {
+      "text": "원무 수납을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-I9": {
+      "text": "외래약국을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-R1": {
+      "text": "서울대병원 정류장을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-R2": {
+      "text": "서울대병원 정류장을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-R3": {
+      "text": "미금역 정류장을 찾고 있어요. 가는 길을 알려주세요.",
+      "model": "eleven_v4",
+      "voices": {
+        "f": "uyVNoMrnUku1dZyVEXwD",
+        "m": "kwADdKIUQ2N2wRM8tami"
+      }
+    },
+    "help-R4": {
+      "text": "미금역 이번 출구를 찾고 있어요. 가는 길을 알려주세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",
