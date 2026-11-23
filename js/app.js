@@ -31,6 +31,26 @@ const STEP_CLIP = {
 };
 // On-screen sentence of the two wizard screens whose spoken clip is too long for three lines of 36px.
 const STEP_SCREEN_TEXT = { confirm: '이렇게 가시는 게 맞나요?', checklist: '신분증과 진료의뢰서를 챙기세요.' };
+const NOT_HEARD = '잘 알아듣지 못했어요. ';
+
+/**
+ * What to re-ask after a spoken sentence has been merged (`prev` and `next` are the states before and
+ * after SET_FIELDS). The re-ask follows the screen: the hospital sentence only when the hospital
+ * question is showing and still unanswered (the parser's reAsk is ignored otherwise, also on the AI
+ * path); a question screen that did not move on repeats its own question, spoken with the recorded
+ * clip of that step (`speak: 'step'`). Returns null when the sentence moved the wizard on.
+ */
+export function reAskFor(prev, next, parsedReAsk = null) {
+  if (prev.index >= 0 || next.index >= 0) return null;
+  const step = prev.prepStep;
+  if (!QUESTION_STEPS.includes(step)) return null;
+  if (step === 'hospital' && next.fields.hospital === null) {
+    return { text: parsedReAsk || REASK_HOSPITAL_SPEECH, speak: 'hospital' };
+  }
+  if (next.prepStep !== step || next.fields[step] !== null) return null;
+  const changed = QUESTION_STEPS.some((id) => next.fields[id] !== prev.fields[id]);
+  return { text: (changed ? '' : NOT_HEARD) + CLIP_TEXT[STEP_CLIP[step]], speak: 'step' };
+}
 const BUS_NOTE = '버스 안 안내 방송과 화면에 나오는 정류장 이름을 확인하세요. 잘 모르시겠으면 기사님께 물어보세요.';
 export const ARRIVED_TEXT = '미금역에 도착했어요. 안내를 모두 마쳤습니다.';
 export const TODAY_ORDER_TITLE = '오늘 순서';
@@ -1191,11 +1211,15 @@ function boot(route, support, floor = null, area = null) {
     if (token !== parseToken || state.index >= 0) return;
     parsing = false;
     badge = result.source === 'ai' ? '인공지능 해석' : '규칙 해석';
-    reAsk = result.reAsk;
     typedText = '';
     typedOpen = false;
+    const before = state;
     dispatch({ type: 'SET_FIELDS', fields: result.fields }, { keepHeard: true });
-    if (reAsk) say(reAsk === REASK_HOSPITAL_SPEECH ? 'reask-hospital' : 'reask', reAsk);
+    const decision = reAskFor(before, state, result.reAsk);
+    reAsk = decision ? decision.text : null;
+    if (decision) render();
+    if (!decision) sayStep();
+    else if (decision.speak === 'hospital') say(decision.text === REASK_HOSPITAL_SPEECH ? 'reask-hospital' : 'reask', decision.text);
     else sayStep();
   }
 
