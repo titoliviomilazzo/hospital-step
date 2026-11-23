@@ -291,6 +291,15 @@ textarea {
 .ride-count { margin: 0; font-size: 30px; font-weight: 900; line-height: 1.25; text-align: center; }
 .ride-next { margin: 0; font-size: 22px; font-weight: 800; line-height: 1.25; text-align: center; }
 
+/* Pinch-to-zoom (js/zoom.js): the frame clips the svg; one finger still scrolls the page at 1x. */
+.zoom-host { touch-action: pan-y; }
+.zoom-host[data-zoomed="1"] { touch-action: none; }
+.zoom-frame { overflow: hidden; position: relative; max-width: 100%; }
+.zoom-frame > svg { transform-origin: 0 0; will-change: transform; -webkit-user-select: none; user-select: none; }
+.zoom-bar { display: flex; gap: 8px; margin: 6px 0 8px; }
+.zoom-btn { flex: 1 1 0; min-height: 56px; padding: 8px 4px; font-size: 22px; background: var(--card); }
+
 @media (prefers-reduced-motion: reduce) {
+  .zoom-frame > svg { transition: none !important; }
   * { animation: none !important; transition: none !important; }
 }

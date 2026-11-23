@@ -1,0 +1,56 @@
+{
+  "label": "예시 대화",
+  "note": "Fictional demo consultation. No real doctor, patient or visit. transcript is the lines joined without speaker tags (what the listener would produce); savedItems is the extraction that validateNotesReply accepts against it.",
+  "hospital": "분당서울대병원",
+  "visitDate": "2026-11-30",
+  "lines": [
+    { "speaker": "nurse", "text": "어르신, 먼저 혈압부터 재 볼게요." },
+    { "speaker": "nurse", "text": "지난번보다 조금 높게 나왔어요." },
+    { "speaker": "patient", "text": "집에서 잴 때는 괜찮았는데요." },
+    { "speaker": "doctor", "text": "혈압약은 지금처럼 아침에 한 번 드시면 됩니다." },
+    { "speaker": "doctor", "text": "짠 음식은 좀 줄이셔야 해요." },
+    { "speaker": "patient", "text": "네, 알겠습니다." },
+    { "speaker": "doctor", "text": "오늘 피검사를 하나 하고 가세요." },
+    { "speaker": "doctor", "text": "그럼 3개월 뒤에 다시 뵐게요." },
+    { "speaker": "nurse", "text": "나가시면서 수납에서 다음 예약 잡고 가세요." },
+    { "speaker": "nurse", "text": "예약은 3월 2일 오전 10시 30분으로 잡아 드렸어요." },
+    { "speaker": "patient", "text": "고맙습니다." },
+    { "speaker": "doctor", "text": "조심해서 가세요." }
+  ],
+  "transcript": "어르신, 먼저 혈압부터 재 볼게요.\n지난번보다 조금 높게 나왔어요.\n집에서 잴 때는 괜찮았는데요.\n혈압약은 지금처럼 아침에 한 번 드시면 됩니다.\n짠 음식은 좀 줄이셔야 해요.\n네, 알겠습니다.\n오늘 피검사를 하나 하고 가세요.\n그럼 3개월 뒤에 다시 뵐게요.\n나가시면서 수납에서 다음 예약 잡고 가세요.\n예약은 3월 2일 오전 10시 30분으로 잡아 드렸어요.\n고맙습니다.\n조심해서 가세요.",
+  "savedItems": [
+    {
+      "kind": "next",
+      "text": "3월 2일 오전 10시 30분에 오세요.",
+      "next": { "date": "2027-03-02", "time": "10:30", "place": null, "said": null },
+      "source": "예약은 3월 2일 오전 10시 30분으로 잡아 드렸어요"
+    },
+    {
+      "kind": "next",
+      "text": "3개월 뒤에 다시 오세요.",
+      "next": { "date": null, "time": null, "place": null, "said": "3개월 뒤" },
+      "source": "그럼 3개월 뒤에 다시 뵐게요"
+    },
+    {
+      "kind": "med",
+      "text": "혈압약을 아침에 하루 한 번 드세요.",
+      "med": { "name": "혈압약", "timesPerDay": 1, "slots": ["아침"], "days": null },
+      "source": "혈압약은 지금처럼 아침에 한 번 드시면 됩니다"
+    },
+    {
+      "kind": "test",
+      "text": "오늘 피검사를 하고 가세요.",
+      "source": "오늘 피검사를 하나 하고 가세요"
+    },
+    {
+      "kind": "todo",
+      "text": "수납에서 다음 예약을 잡고 가세요.",
+      "source": "나가시면서 수납에서 다음 예약 잡고 가세요"
+    },
+    {
+      "kind": "caution",
+      "text": "짠 음식을 줄이세요.",
+      "source": "짠 음식은 좀 줄이셔야 해요"
+    }
+  ]
+}

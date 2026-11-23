@@ -20,6 +20,7 @@ import { arrivalPointFor, fetchArrivalDetail, locationText, REFRESH_MS, stopLabe
 import { loadArea, renderAreaMap, sceneFor, ridingProgress, walkStart, remainingText, nextStopText } from './areamap.js';
 import { WEBHOOK_URL, ARRIVAL_URL } from '../config.js';
 import { APP_VERSION, versioned } from './version.js';
+import { attachZoom } from './zoom.js';
 
 const FIELD_IDS = FIELDS.map((f) => f.id);
 export const STAGE_LABEL = {
@@ -457,6 +458,8 @@ function boot(route, support, floor = null, area = null) {
   let ridePos = null; // latest fix of the get-off watch, for the map only; memory only, never stored or sent
   let rideProgress = null; // {lastIndex, atStop, nextIndex, remaining} along the stops of the ride
   let areaHost = null; // the element that holds the outdoor map currently on screen
+  let areaZoom = null; // zoom controller of areaHost (state per host: a new panel starts at 1x)
+  let floorZoom = null; // zoom controller of floorHost
 
   // Bus arrival info on a point that has `arrival` (only when ARRIVAL_URL is configured).
   let arrivalPointId = null;
@@ -1018,6 +1021,7 @@ function boot(route, support, floor = null, area = null) {
     const scene = areaSceneFor(p);
     if (!scene) return null;
     areaHost = h('div', { class: 'area-host' }, svgNode(renderAreaMap(area, scene.opts)));
+    areaZoom = attachZoom(areaHost, { bar: zoomBar(() => areaZoom, 'area') });
     return h('div', { class: 'card area-card', id: 'area-panel' }, areaHost);
   }
 
@@ -1061,6 +1065,7 @@ function boot(route, support, floor = null, area = null) {
     const scene = areaSceneFor(p);
     if (!scene) return;
     areaHost.replaceChildren(svgNode(renderAreaMap(area, scene.opts)));
+    if (areaZoom) areaZoom.reapply(); // the fresh svg gets the same zoom and pan back
     if (scene.kind === 'ride') updateRideText(p);
   }
 
@@ -1070,6 +1075,15 @@ function boot(route, support, floor = null, area = null) {
     if (!floorHost || !floorHost.isConnected || !showsFloorMap(p)) return;
     const { current, next } = floorFocus(route, state.index);
     floorHost.replaceChildren(svgNode(renderFloorMap(floor, current, next, route, { headingDeg: floorStep })));
+    if (floorZoom) floorZoom.reapply(); // the fresh svg gets the same zoom and pan back
+  }
+
+  /** [크게] [작게] [원래대로] right under the map frame (zoom.js places it): pinching is hard for many users. Never redrawn. */
+  function zoomBar(getCtl, key) {
+    const ctl = { zoomIn: () => getCtl().zoomIn(), zoomOut: () => getCtl().zoomOut(), reset: () => getCtl().reset() };
+    const btn = (id, label, fn) => h('button', { type: 'button', class: 'btn zoom-btn', id: `zoom-${key}-${id}`, onclick: fn }, label);
+    return h('div', { class: 'zoom-bar', role: 'group', 'aria-label': '지도 크기' },
+      btn('in', '크게', () => ctl.zoomIn()), btn('out', '작게', () => ctl.zoomOut()), btn('reset', '원래대로', () => ctl.reset()));
   }
 
   /**
@@ -1081,6 +1095,7 @@ function boot(route, support, floor = null, area = null) {
     syncFloorStep();
     floorHost = h('div', { class: 'floor-host' },
       svgNode(renderFloorMap(floor, current, next, route, { headingDeg: floorStep })));
+    floorZoom = attachZoom(floorHost, { bar: zoomBar(() => floorZoom, 'floor') });
     const box = h('div', { class: 'card', id: 'sim-panel' }, floorHost);
     if (settings.sim) {
       const readout = h('output', { id: 'heading-readout', for: 'heading-slider' }, `${sim.heading}도`);
