@@ -539,7 +539,7 @@
       }
     },
     "help-I4": {
-      "text": "노인의료센터를 찾고 있어요. 가는 길을 알려주세요.",
+      "text": "노인의료센터에서 진료를 기다리고 있어요. 어디서 기다리면 되는지 알려주세요.",
       "model": "eleven_v4",
       "voices": {
         "f": "uyVNoMrnUku1dZyVEXwD",

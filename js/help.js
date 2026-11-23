@@ -43,8 +43,13 @@ export function helpPlace(route, index, floor = null) {
   return null;
 }
 
-/** Help sentence of one route point: "<place>을 찾고 있어요. 가는 길을 알려주세요." */
+/**
+ * Help sentence of one route point: "<place>을 찾고 있어요. 가는 길을 알려주세요."
+ * A point with its own `help` string (e.g. waiting at the clinic) uses that sentence verbatim.
+ */
 export function helpSentenceForPoint(route, index, floor = null) {
+  const own = route.points[index].help;
+  if (typeof own === 'string' && own.trim() !== '') return own;
   const place = helpPlace(route, index, floor) || GENERIC_PLACE;
   return `${withObject(place)} 찾고 있어요. ${FIND_TAIL}`;
 }

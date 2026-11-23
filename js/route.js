@@ -52,6 +52,7 @@ export function validateRoute(obj) {
     }
     if (p.floor !== undefined && !isNonEmptyString(p.floor)) errors.push(`${tag}.floor must be a non-empty string`);
     if (p.facility !== undefined && p.floor === undefined) errors.push(`${tag}: facility needs a floor`);
+    if (p.help !== undefined && !isNonEmptyString(p.help)) errors.push(`${tag}.help must be a non-empty string`);
     if (p.wait !== undefined && typeof p.wait !== 'boolean') errors.push(`${tag}.wait must be a boolean`);
     if (p.order !== i + 1) errors.push(`${tag}.order must be ${i + 1}`);
     if (typeof p.detail !== 'string') errors.push(`${tag}.detail must be a string (may be empty)`);
