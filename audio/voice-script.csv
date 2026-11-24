@@ -32,6 +32,8 @@ clipId,text
 "notes-declined","적지 않을게요. 편하게 진료 받으세요."
 "notes-summarising","정리하고 있어요. 잠시만요."
 "notes-last","의사·간호사 말씀이 우선입니다. 헷갈리면 다시 물어보세요."
+"notes-paste","병원에서 온 문자를 넣어 주세요."
+"notes-paste-none","정리할 내용을 찾지 못했어요."
 "prep-prompt","화면에 적힌 내용이 맞는지 보시고, 맞으면 길 안내 시작을 눌러 주세요."
 "prep-checklist","집을 나서기 전에 신분증과 진료의뢰서를 꼭 챙기세요."
 "prep-confirm","이 내용이 맞으세요?"

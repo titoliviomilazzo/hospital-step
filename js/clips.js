@@ -102,6 +102,8 @@ export const NOTES_SENTENCES = {
   declined: '적지 않을게요. 편하게 진료 받으세요.',
   summarising: '정리하고 있어요. 잠시만요.',
   last: '의사·간호사 말씀이 우선입니다. 헷갈리면 다시 물어보세요.',
+  pasteAsk: '병원에서 온 문자를 넣어 주세요.',
+  pasteNone: '정리할 내용을 찾지 못했어요.',
 };
 export const NOTES_CLIPS = [
   { clipId: 'notes-ask', text: NOTES_SENTENCES.ask },
@@ -109,6 +111,8 @@ export const NOTES_CLIPS = [
   { clipId: 'notes-declined', text: NOTES_SENTENCES.declined },
   { clipId: 'notes-summarising', text: NOTES_SENTENCES.summarising },
   { clipId: 'notes-last', text: NOTES_SENTENCES.last },
+  { clipId: 'notes-paste', text: NOTES_SENTENCES.pasteAsk },
+  { clipId: 'notes-paste-none', text: NOTES_SENTENCES.pasteNone },
 ];
 
 // The spoken "now" alert names no stop, so the outbound and the return leg share one clip.

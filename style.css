@@ -381,6 +381,9 @@ textarea {
 
 /* Notes record screens have no step counter: no dots either, and the header keeps its height. */
 .dots:empty { display: none; }
+/* ... and then the header band is one row high, not the full height reserved for the dots. [설정] stays in that row. */
+html.no-dots { --top-h: 68px; }
+html.no-dots .top { min-height: 0; }
 /* While the microphone is open a red bar stays on top of every overlay (help, settings). */
 .overlay-rec { position: fixed; top: 0; left: 0; right: 0; z-index: 60; border-radius: 0; border-width: 0 0 3px; justify-content: center; }
 body.has-overlay-rec .overlay { padding-top: 64px; }
@@ -393,4 +396,16 @@ body.has-overlay-rec .overlay { padding-top: 64px; }
   .notes-n2 .notes-btn.stop { min-height: 72px; font-size: 30px; }
   .notes-n2 .rec-bar { font-size: 22px; padding: 4px 12px; }
   .notes-n2 .notes-hint { font-size: 18px; }
+}
+
+/* Paste screen (hospital message): one big box, then the two big buttons. */
+.paste-text { min-height: 112px; font-size: 20px; }
+.notes-paste .notes-duo .notes-btn { min-height: 72px; font-size: 24px; }
+@media (max-height: 640px) {
+  .paste-text { min-height: 72px; max-height: 14vh; font-size: 18px; }
+  .notes-paste .notes-duo .notes-btn { min-height: 64px; font-size: 22px; }
+}
+@media (max-height: 640px) {
+  /* short phones: the quoted message keeps two lines; the full text is under [원문 보기] with the quote marked */
+  .note-source { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 }

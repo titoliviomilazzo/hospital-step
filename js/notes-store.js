@@ -9,7 +9,7 @@ import { KINDS } from './notes.js';
 export const NOTES_KEY = 'hospital-step.notes.v1';
 export const MAX_RECORDS = 20;
 
-const SOURCES = ['listen', 'typed', 'sample'];
+const SOURCES = ['listen', 'typed', 'sample', 'pasted'];
 const SUMMARIES = ['ai', 'rules', 'none']; // none: transcript only, the summary failed
 const STATUSES = ['unconfirmed', 'confirmed'];
 
@@ -51,6 +51,7 @@ export function sanitizeRecord(raw) {
     hospital: str(r.hospital, 60),
     consent: { doctor: consent.doctor === true, at: str(consent.at, 40) },
     source: SOURCES.includes(r.source) ? r.source : 'typed',
+    ...(r.msg === true ? { msg: true } : {}), // an (example) hospital message, not a conversation
     transcript: str(r.transcript) ?? '',
     items: (Array.isArray(r.items) ? r.items : []).map(sanitizeItem).filter(Boolean),
     dropped: Number.isInteger(r.dropped) && r.dropped >= 0 ? r.dropped : 0,
@@ -160,7 +161,7 @@ export function clearRecords(store = null) {
  */
 export function makeRecord({
   date, hospital = null, consentAt = null, source = 'typed', transcript = '', items = [],
-  dropped = 0, summary = 'none', id = null, existingIds = [],
+  dropped = 0, summary = 'none', id = null, existingIds = [], msg = false,
 }) {
   let rid = id;
   if (!rid) {
@@ -175,6 +176,7 @@ export function makeRecord({
     hospital,
     consent: { doctor: Boolean(consentAt), at: consentAt },
     source,
+    ...(msg ? { msg: true } : {}),
     transcript,
     items: items.map((it) => ({ ...it, status: it.status || 'unconfirmed', edited: it.edited === true })),
     dropped,

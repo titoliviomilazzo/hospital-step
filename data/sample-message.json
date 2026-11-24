@@ -1,0 +1,5 @@
+{
+  "label": "예시 문자",
+  "note": "Fictional hospital messages for simulation mode. No real patient, hospital notice or visit. The visit date carries its year so the sample reads the same on any day before it.",
+  "text": "[분당서울대병원] 홍길동님 2027년 3월 2일(화) 10:30 노인의료센터 외래 진료가 예약되었습니다. 진료 1시간 전까지 1동 1층 접수처로 오세요.\n\n[분당서울대병원] 복용 안내: 혈압약 1일 1회 아침 식후 30분, 7일분"
+}

@@ -19,8 +19,8 @@ import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './flo
 import { arrivalPointFor, fetchArrivalDetail, locationText, REFRESH_MS, stopLabel } from './arrival.js';
 import { loadArea, renderAreaMap, sceneFor, ridingProgress, walkStart, remainingText, nextStopText } from './areamap.js';
 import {
-  createNotesFlow, createWakeLock, asksNotesAfter, isConsultPoint, showEnterRoomButton, showRecordsButton, recordForDate, localDate,
-  shouldOfferNotes, helpMaySpeak, TAP_GUARD_MS,
+  createNotesFlow, createWakeLock, asksNotesAfter, isConsultPoint, showEnterRoomButton, recordForDate, localDate,
+  shouldOfferNotes, helpMaySpeak, TAP_GUARD_MS, isVisitRecord,
 } from './notes-flow.js';
 import { createNotesUi } from './notes-ui.js';
 import { listRecords, getRecord, clearRecords } from './notes-store.js';
@@ -416,7 +416,7 @@ let booted = false;
 
 // ---------------------------------------------------------------- app
 
-function boot(route, support, floor = null, area = null, sample = null) {
+function boot(route, support, floor = null, area = null, sample = null, sampleMessage = null) {
   booted = true;
   const $ = (id) => document.getElementById(id);
   const stored = loadState(route.points.map((p) => p.id));
@@ -483,13 +483,15 @@ function boot(route, support, floor = null, area = null, sample = null) {
     createListener, // listen.js; the flow never starts it before the doctor's tap on N1
     sim: () => settings.sim,
     sample,
+    sampleMessage, // fictional hospital message for [예시 문자 넣기] (simulation only)
+    listenOn: () => settings.listenNotes, // optional doctor-speech transcription, off by default
     notesUrl: NOTES_URL,
     wakeLock: createWakeLock(),
     tapGuardMs: TAP_GUARD_MS, // a tap within 0.6 s of a new notes screen is ignored (double taps, taps meant for the last screen)
     onChange: () => render(),
   });
   const notesUi = createNotesUi({
-    h, svgNode, flow, say, stopSpeaking, rerender: () => render(), online: Boolean(NOTES_URL),
+    h, svgNode, flow, say, stopSpeaking, rerender: () => render(), online: Boolean(NOTES_URL), isSim: () => settings.sim,
     onSpeakPoint: () => sayCurrent(),
     notesUrl: NOTES_URL,
     onBack: () => {
@@ -504,11 +506,13 @@ function boot(route, support, floor = null, area = null, sample = null) {
       sayCurrent();
     },
   });
+  /** [진료실에 들어왔어요] on I4: only when the optional transcription is on and the user said yes on N0. */
+  const roomButtonShown = () => settings.listenNotes && showEnterRoomButton(flow.state);
   /** The record of this visit (just taken, or one dated today), for the finish screen. */
   // Example records (simulation) are offered back only while simulation is on.
   const todayRecord = () => {
     const own = flow.state.record ? getRecord(flow.state.record) : null;
-    if (own && (own.source !== 'sample' || settings.sim)) return own;
+    if (own && isVisitRecord(own, { sim: settings.sim })) return own; // a pasted message is never "today's visit"
     return recordForDate(listRecords(), localDate(new Date()), { sim: settings.sim });
   };
 
@@ -789,8 +793,8 @@ function boot(route, support, floor = null, area = null, sample = null) {
       } }, resumeLabel(state, route)));
     }
 
-    // [내 진료 기록]: only on the first screen and only when a record exists.
-    if (step === 'hospital' && !state.editing && showRecordsButton(listRecords().length)) {
+    // [내 진료 기록]: always on the first screen (with no record it opens an empty list that offers the paste screen).
+    if (step === 'hospital' && !state.editing) {
       main.append(h('button', { class: 'btn wide', id: 'btn-records', onclick: () => notesUi.openList() }, '내 진료 기록'));
     }
 
@@ -1402,7 +1406,7 @@ function boot(route, support, floor = null, area = null, sample = null) {
 
     // The user said yes on N0: the doctor's consent card (N1) opens from this one big button, which
     // sits first so it is above the bar without scrolling, even in simulation mode.
-    if (isConsultPoint(p) && showEnterRoomButton(flow.state)) {
+    if (isConsultPoint(p) && roomButtonShown()) {
       main.append(h('button', { class: 'btn wide primary notes-btn lead', id: 'btn-enter-room', onclick: () => {
         flow.enterRoom();
         if (flow.state.phase === 'n1') say('notes-consent', NOTES_SENTENCES.consent); // an ignored early tap says nothing
@@ -1556,6 +1560,7 @@ function boot(route, support, floor = null, area = null, sample = null) {
       if ('sim' in patch && patch.sim !== settings.sim) stopAlight(); // a status from the other mode is stale
       if ('sim' in patch && patch.sim !== settings.sim) flow.modeChanged(); // so is a running capture (a summary in progress finishes saving)
       settings = { ...settings, ...patch };
+      if ('listenNotes' in patch) flow.listenSettingChanged(); // switching it off ends N0..N2 and closes the microphone
       persist();
       if (!settings.sound) stopSpeaking();
       render(); // the settings card itself is not rebuilt, so focus stays on the control
@@ -1582,7 +1587,9 @@ function boot(route, support, floor = null, area = null, sample = null) {
       reducedMotion() ? h('p', { class: 'muted' }, '움직임 줄이기 설정이 켜져 있어서 평면 화살표만 보여요.') : null,
       toggle('largeText', '큰 글씨'),
       toggle('sim', '시뮬레이션', '(모식도로 화살표를 연습해 봐요)'),
-      h('p', { class: 'muted' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요. 단, 진료 말씀 적어 두기를 쓰고 선생님이 허락하신 경우에는 글자로 정리한 진료 기록이 이 기기에만 남아요. 소리는 저장하지 않아요.'),
+      toggle('listenNotes', '의사 말씀 받아 적기 (선택)'),
+      h('p', { class: 'muted', id: 'listen-notes-note' }, '진료실에서 의사 선생님이 허락하실 때만 쓰세요. 소리는 저장하지 않아요.'),
+      h('p', { class: 'muted', id: 'privacy-note' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요. 단, 병원 문자를 붙여 넣어 정리한 기록과, 받아 적기를 켜고 선생님이 허락하신 경우의 글자 기록은 이 기기에만 남아요. 붙여넣은 글은 밖으로 보내지 않고 이 휴대폰 안에서만 정리해요. 소리는 저장하지 않아요.'),
       h('p', { class: 'muted' }, '내릴 곳 알림을 켜면 휴대폰 위치를 쓰지만, 위치는 저장하거나 보내지 않아요.'),
       h('p', { class: 'muted' }, '말하기 기능을 쓰면 휴대폰 브라우저가 음성을 인식하려고 소리를 인터넷으로 보낼 수 있어요.'),
       clearNotesControl(),
@@ -1605,6 +1612,8 @@ function boot(route, support, floor = null, area = null, sample = null) {
     const p = nScreen ? null : currentPoint();
     document.documentElement.dataset.screen = screen;
     document.documentElement.classList.toggle('large', settings.largeText);
+    // the record and paste screens have no step counter and no dots: the header band shrinks to its one row
+    document.documentElement.classList.toggle('no-dots', Boolean(nScreen && nScreen.header));
 
     const prog = progressOf(state, route);
     if (nScreen && nScreen.header) {
@@ -1626,7 +1635,7 @@ function boot(route, support, floor = null, area = null, sample = null) {
     // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
     // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
     $('instruction').classList.toggle('compact', Boolean((p && p.alertCoord) || (nScreen && nScreen.compact)
-      || (p && isConsultPoint(p) && showEnterRoomButton(flow.state)))); // I4 with the room button: the button must stay above the bar
+      || (p && isConsultPoint(p) && roomButtonShown()))); // I4 with the room button: the button must stay above the bar
     areaHost = null; // set again only when this screen builds a map
     syncArrival(p);
     syncCompass(p);
@@ -1706,7 +1715,7 @@ function boot(route, support, floor = null, area = null, sample = null) {
       vibrate(80);
       // Confirming the point before the consultation asks N0 once per visit (the screen is up before
       // the route moves on, so I4 never flashes in between).
-      const askNotes = asksNotesAfter(route, state.index) && flow.state.wants === null;
+      const askNotes = asksNotesAfter(route, state.index) && flow.state.wants === null && settings.listenNotes;
       if (askNotes) flow.askAfterConfirm();
       dispatch({ type: 'CONFIRM' });
       if (askNotes) say('notes-ask', NOTES_SENTENCES.ask);
@@ -1831,7 +1840,18 @@ async function start() {
   } catch {
     sample = null;
   }
-  boot(route, support, floor, area, sample);
+  // The example hospital message (simulation only) is optional too: without it [예시 문자 넣기] does nothing.
+  let sampleMessage = null;
+  try {
+    const res = await fetch(versioned('data/sample-message.json'));
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.text === 'string') sampleMessage = data;
+    }
+  } catch {
+    sampleMessage = null;
+  }
+  boot(route, support, floor, area, sample, sampleMessage);
 }
 
 if (typeof document !== 'undefined') start();

@@ -11,13 +11,15 @@ import { NOTES_SENTENCES } from './clips.js';
 import {
   SAMPLE_BAND, SAVED_RESULT_BAND, SUMMARY_LATER, CONSENT_AI_LINE, localDate, recordTitle, nextNeedsDate, datePrefill,
   icsFilename, visitIcsFor, medSlotsFor, medIcsFor, medStartDate, medStartNote, highlightSegments, shareOrCopy,
-  finalNote, resummarise,
+  finalNote, resummarise, PASTED_SUMMARY_LATER, PASTED_BAND, SAMPLE_MESSAGE_BAND, PASTE_PRIVACY_LINE, PASTE_NONE_MSG,
+  PASTE_HINT, DROPPED_PASTE_TEXT, isMessageRecord,
 } from './notes-flow.js';
 
 const PHONE_VOICE_LINE = '여기서는 휴대폰 목소리로 읽어 드려요';
 const SAVE_HINT = '중요한 내용은 달력에 넣거나 가족에게 보내 두세요';
 const DROPPED_TEXT = (n) => `${n}개는 근거를 찾지 못해 뺐어요. 원문에서 확인하세요`;
 const statusText = (it) => (it.edited ? '직접 고침' : (it.status === 'unconfirmed' ? '확인 전' : ''));
+const EMPTY_LIST = '아직 기록이 없어요. 병원에서 온 문자를 넣어 보세요.';
 const HEADER = '내 진료 기록'; // the record screens are not a step of the visit: own header, no step counter
 const sequenceNow = () => Math.floor(Date.now() / 1000); // a later export of the same entry carries a higher SEQUENCE
 
@@ -156,6 +158,48 @@ export function createNotesUi(ctx) {
     };
   }
 
+  function p0() {
+    const f = flow.state;
+    const text = h('textarea', {
+      id: 'paste-text', class: 'paste-text', rows: 5, 'aria-label': '병원에서 온 문자',
+      placeholder: '문자를 길게 눌러 복사한 뒤 여기에 붙여넣어 주세요',
+      oninput: (e) => {
+        flow.setPasteText(e.target.value);
+        const go = document.getElementById('btn-paste-go');
+        if (go) go.disabled = !e.target.value.trim();
+      },
+    }, f.pasteText);
+    const sim = typeof ctx.isSim === 'function' && ctx.isSim();
+    return {
+      instruction: NOTES_SENTENCES.pasteAsk,
+      compact: true,
+      node: h('div', { class: 'stack notes-tight notes-paste', id: 'notes-paste' },
+        f.pasteSample ? band(SAMPLE_MESSAGE_BAND) : null,
+        text,
+        h('p', { class: 'note', id: 'paste-msg', role: 'status' }, f.pasteMsg || PASTE_HINT), // the way to paste is told at once, not only after a failed [붙여넣기]
+        h('div', { class: 'notes-duo' },
+          btn('붙여넣기', { id: 'btn-paste-clip', onclick: () => { flow.pasteFromClipboard(); } }),
+          btn('정리하기', { id: 'btn-paste-go', class: 'primary', disabled: f.pasteText.trim() ? null : true, onclick: () => { flow.organise(); } })),
+        h('p', { class: 'note', id: 'paste-privacy' }, PASTE_PRIVACY_LINE),
+        h('div', { class: 'n2-links' },
+          sim ? h('button', { type: 'button', class: 'btn small ghost', id: 'btn-paste-sample', onclick: () => flow.fillSampleMessage() }, '예시 문자 넣기') : null,
+          h('button', { type: 'button', class: 'btn small ghost', id: 'btn-paste-cancel', onclick: () => flow.leave() }, '그만두기'))),
+    };
+  }
+
+  function p1() {
+    return {
+      instruction: NOTES_SENTENCES.pasteNone,
+      compact: true,
+      node: h('div', { class: 'stack', id: 'notes-paste-none' },
+        h('p', { class: 'notes-big', id: 'paste-none-msg' }, PASTE_NONE_MSG),
+        flow.state.dropped > 0 ? h('p', { class: 'note', id: 'paste-dropped', role: 'status' }, DROPPED_PASTE_TEXT(flow.state.dropped)) : null,
+        btn('다시 넣기', { id: 'btn-paste-again', class: 'primary lead', onclick: () => flow.pasteAgain() }),
+        btn('그냥 저장', { id: 'btn-paste-save-only', onclick: () => flow.saveTextOnly() }),
+        h('button', { type: 'button', class: 'btn small ghost', id: 'btn-paste-cancel', onclick: () => flow.leave() }, '그만두기')),
+    };
+  }
+
   function full() {
     const all = listRecords();
     const oldest = all[all.length - 1];
@@ -171,7 +215,8 @@ export function createNotesUi(ctx) {
 
   function n4() {
     const f = flow.state;
-    const bandText = [f.sample ? SAMPLE_BAND : null, f.usedSaved ? SAVED_RESULT_BAND : null].filter(Boolean).join(' · ');
+    const pasted = f.origin === 'paste';
+    const bandText = [f.sample ? SAMPLE_BAND : null, f.usedSaved ? SAVED_RESULT_BAND : null, pasted ? PASTED_BAND : null].filter(Boolean).join(' · ');
     const bands = [bandText ? band(bandText) : null];
     if (f.idx >= f.items.length) {
       const empty = f.items.length === 0;
@@ -183,11 +228,17 @@ export function createNotesUi(ctx) {
           ...bands,
           note.lead ? h('p', { class: 'notes-big', id: 'notes-later' }, note.lead) : null,
           note.saved ? h('p', { class: 'note', id: 'notes-saved' }, note.saved) : null,
-          f.dropped > 0 ? h('p', { class: 'note', id: 'notes-dropped', role: 'status' }, DROPPED_TEXT(f.dropped)) : null,
+          f.dropped > 0 ? h('p', { class: 'note', id: 'notes-dropped', role: 'status' }, (pasted ? DROPPED_PASTE_TEXT : DROPPED_TEXT)(f.dropped)) : null,
           f.saveNote ? h('p', { class: 'note', role: 'status' }, f.saveNote) : null,
           h('p', { class: 'notes-big notes-final' }, NOTES_SENTENCES.last),
           btn('확인했어요', { id: 'btn-n4-done', class: 'primary lead', onclick: () => {
             if (!flow.tapOk()) return; // a tap meant for the item screen before
+            if (pasted) {
+              // A pasted message is not a step of the visit: show the record (or the list) instead of moving the route on.
+              const id = flow.finish();
+              if (id) openRecord(id); else openList();
+              return;
+            }
             ctx.onContinue(flow.finish());
           } }),
           f.items.length ? h('button', { class: 'btn small ghost', id: 'btn-n4-prev', onclick: () => flow.prevItem() }, '앞 항목 다시 보기') : null),
@@ -213,8 +264,8 @@ export function createNotesUi(ctx) {
         ...bands,
         h('div', { class: 'note-head' }, pic(it.kind), h('span', { class: 'note-title', id: 'note-title' }, CARD_TITLES[it.kind]),
           h('span', { class: 'note-pos' }, `${f.idx + 1} / ${f.items.length}`)),
-        it.source ? h('p', { class: 'note-source', id: 'note-source' }, `선생님 말씀: “${it.source}”`) : null,
-        f.idx === 0 && f.dropped > 0 ? h('p', { class: 'note', id: 'notes-dropped', role: 'status' }, DROPPED_TEXT(f.dropped)) : null,
+        it.source ? h('p', { class: 'note-source', id: 'note-source' }, `${f.origin === 'paste' ? '병원 문자' : '선생님 말씀'}: “${it.source}”`) : null,
+        f.idx === 0 && f.dropped > 0 ? h('p', { class: 'note', id: 'notes-dropped', role: 'status' }, (pasted ? DROPPED_PASTE_TEXT : DROPPED_TEXT)(f.dropped)) : null,
         h('div', { class: 'notes-trio' },
           btn('맞아요', { id: 'btn-item-ok', class: 'primary', onclick: () => { editText = ''; flow.itemAction('ok'); } }),
           btn('고칠게요', { id: 'btn-item-edit', onclick: () => { editText = it.text; flow.itemAction('edit'); } }),
@@ -232,6 +283,8 @@ export function createNotesUi(ctx) {
       case 'n1': return say('notes-consent', NOTES_SENTENCES.consent);
       case 'n1-declined': return say('notes-declined', NOTES_SENTENCES.declined);
       case 'n3': return say('notes-summarising', NOTES_SENTENCES.summarising);
+      case 'p0': return say('notes-paste', NOTES_SENTENCES.pasteAsk);
+      case 'p1': return say('notes-paste-none', NOTES_SENTENCES.pasteNone);
       case 'n4':
         if (f.idx >= f.items.length) return say('notes-last', NOTES_SENTENCES.last);
         return readAloud([f.items[f.idx].text]);
@@ -274,13 +327,21 @@ export function createNotesUi(ctx) {
 
   function v1() {
     const all = listRecords();
+    const pasteBtn = btn('병원 문자 넣기', { id: 'btn-paste-open', class: 'primary lead', onclick: () => { flow.openPaste(); } });
     if (!all.length) {
-      view = null;
-      return null;
+      return {
+        instruction: '내 진료 기록',
+        node: h('div', { class: 'stack', id: 'notes-list' },
+          h('p', { class: 'notes-big', id: 'notes-empty' }, EMPTY_LIST),
+          pasteBtn,
+          h('button', { class: 'btn wide', id: 'btn-list-close', onclick: () => closeViews() }, '닫기'),
+          disclaimer()),
+      };
     }
     return {
       instruction: '내 진료 기록',
       node: h('div', { class: 'stack', id: 'notes-list' },
+        pasteBtn,
         h('p', { class: 'note' }, PHONE_VOICE_LINE),
         h('div', { class: 'answers' }, all.map((r) => h('button', { type: 'button', class: 'btn answer notes-rec', 'data-id': r.id,
           onclick: () => openRecord(r.id) },
@@ -372,6 +433,7 @@ export function createNotesUi(ctx) {
       .filter((c) => c.entries.length);
     const kids = [
       rec.source === 'sample' ? band(`${SAMPLE_BAND}: 가상의 내용이에요`) : null,
+      isMessageRecord(rec) ? band(PASTED_BAND) : null,
       h('p', { class: 'note' }, PHONE_VOICE_LINE),
       h('div', { class: 'notes-pair' },
         btn('전체 듣기', { id: 'btn-rec-all', onclick: () => readAll(rec) }),
@@ -379,14 +441,16 @@ export function createNotesUi(ctx) {
       view.msg ? h('p', { class: 'note', id: 'notes-view-msg', role: 'status' }, view.msg) : null,
     ];
     if (!cards.length) {
-      kids.push(h('p', { class: 'notes-big' }, rec.summary === 'none' ? SUMMARY_LATER : '남은 항목이 없어요. 받아 적은 글은 [원문 보기]에서 볼 수 있어요.'));
+      const pastedRec = isMessageRecord(rec);
+      kids.push(h('p', { class: 'notes-big' }, rec.summary === 'none' ? (pastedRec ? PASTED_SUMMARY_LATER : SUMMARY_LATER)
+        : `남은 항목이 없어요. ${pastedRec ? '문자는' : '받아 적은 글은'} [원문 보기]에서 볼 수 있어요.`));
     }
     if ((rec.summary === 'none' || !cards.length) && rec.transcript.trim()) {
       kids.push(btn(view.busy ? '정리하는 중이에요...' : '다시 정리하기', { id: 'btn-rec-resummarise', disabled: view.busy ? true : null, onclick: async () => {
         view = { ...view, busy: true, msg: null };
         rerender();
         const r = await resummarise(rec.id, { url: ctx.notesUrl || '', today: localDate(new Date()) });
-        view = { ...view, busy: false, msg: r.ok ? '다시 정리했어요. 항목마다 맞는지 확인해 주세요.' : '이번에도 정리하지 못했어요. 받아 적은 글은 [원문 보기]에서 볼 수 있어요.' };
+        view = { ...view, busy: false, msg: r.ok ? '다시 정리했어요. 항목마다 맞는지 확인해 주세요.' : `이번에도 정리하지 못했어요. ${isMessageRecord(rec) ? '문자는' : '받아 적은 글은'} [원문 보기]에서 볼 수 있어요.` };
         rerender();
       } }));
     }
@@ -397,7 +461,7 @@ export function createNotesUi(ctx) {
         h('button', { type: 'button', class: 'btn small ghost card-replay', 'data-kind': c.kind,
           onclick: () => readAloud([CARD_TITLES[c.kind], ...c.entries.map((e) => e.it.text)]) }, '다시 듣기')));
     }
-    if (rec.dropped > 0) kids.push(h('p', { class: 'note' }, DROPPED_TEXT(rec.dropped)));
+    if (rec.dropped > 0) kids.push(h('p', { class: 'note', id: 'notes-rec-dropped' }, (isMessageRecord(rec) ? DROPPED_PASTE_TEXT : DROPPED_TEXT)(rec.dropped)));
     kids.push(
       h('p', { class: 'note', id: 'notes-save-hint' }, SAVE_HINT),
       btn('원문 보기', { id: 'btn-rec-transcript', onclick: () => { stopReading(); view = { ...view, sub: 'transcript' }; rerender(); } }),
@@ -411,15 +475,17 @@ export function createNotesUi(ctx) {
 
   function v2Transcript(rec) {
     const segs = highlightSegments(rec.transcript, rec.items);
+    const pasted = isMessageRecord(rec);
     return {
-      instruction: '받아 적은 글',
+      instruction: pasted ? '병원에서 온 문자' : '받아 적은 글',
       compact: true,
       node: h('div', { class: 'stack', id: 'notes-transcript' },
         rec.source === 'sample' ? band(`${SAMPLE_BAND}: 가상의 내용이에요`) : null,
-        h('p', { class: 'note' }, '정리에 쓴 선생님 말씀은 노란 바탕으로 표시했어요.'),
+        pasted ? band(PASTED_BAND) : null,
+        h('p', { class: 'note' }, pasted ? '정리에 쓴 문장은 노란 바탕으로 표시했어요.' : '정리에 쓴 선생님 말씀은 노란 바탕으로 표시했어요.'),
         h('div', { class: 'card notes-transcript' }, segs.length
           ? segs.map((s) => (s.mark ? h('mark', {}, s.text) : s.text))
-          : '받아 적은 글이 없어요.'),
+          : (pasted ? '문자가 없어요.' : '받아 적은 글이 없어요.')),
         btn('돌아가기', { id: 'btn-sub-back', onclick: backToRecord }),
         disclaimer()),
     };
@@ -519,6 +585,8 @@ export function createNotesUi(ctx) {
       case 'n1-declined': scr = n1Declined(); break;
       case 'n2': scr = n2(); break;
       case 'n3': scr = n3(); break;
+      case 'p0': scr = p0(); break;
+      case 'p1': scr = p1(); break;
       case 'full': scr = full(); break;
       case 'n4': scr = n4(); key = `${f.idx}|${f.editing}`; break;
       default: break;
@@ -526,6 +594,7 @@ export function createNotesUi(ctx) {
     if (scr) {
       // `key` identifies the screen: app.js scrolls to the top when it changes (not on a live update of N2).
       scr.key = `${f.phase}|${key}`;
+      if (f.origin === 'paste') scr.header = HEADER; // a pasted message is not a step of the visit
       return scr;
     }
     if (!view) return null;

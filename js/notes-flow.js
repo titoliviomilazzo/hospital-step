@@ -15,6 +15,7 @@ import {
 import { makeRecord, addRecord, listRecords, updateRecord, dropOldest, getRecord } from './notes-store.js';
 import { createNotesListener, DEFAULT_MAX_MS } from './notes-listen.js';
 import { visitIcs, medIcs } from './ics.js';
+import { parseHospitalText } from './paper.js';
 
 export const NOTES_TIMEOUT_MS = 20000;
 export const DECLINE_SHOW_MS = 3000;
@@ -30,6 +31,18 @@ export const SAVED_LINE_DELETED = '받아 적은 글은 [원문 보기]에서 �
 export const CONSENT_AI_LINE = '이름과 번호를 가린 글자를 정리용 AI 서비스로 보냅니다';
 export const TAP_GUARD_MS = 600; // taps this soon after a screen appears are ignored (app.js turns it on)
 export const NO_SAMPLE_MSG = '예시 대화를 불러오지 못했어요. 글로 적어 주세요.';
+export const PASTED_BAND = '병원 문자에서 정리';
+export const SAMPLE_MESSAGE_BAND = '예시 문자: 가상의 내용이에요';
+export const PASTE_HINT = '글 입력칸을 길게 눌러 붙여넣어 주세요';
+export const PASTE_EMPTY_MSG = '복사된 글이 없어요. 문자를 길게 눌러 복사한 뒤 다시 눌러 주세요.';
+export const PASTE_PRIVACY_LINE = '붙여넣은 글은 이 휴대폰 안에서만 정리해요.';
+export const PASTE_NONE_MSG = '정리할 내용을 찾지 못했어요. 문자 안에 날짜나 약 먹는 법이 있는지 확인해 주세요.';
+export const PASTED_SUMMARY_LATER = '정리하지 못했어요. 문자는 [원문 보기]에서 볼 수 있어요.';
+export const PASTED_ALL_DELETED = '모든 항목을 지웠어요.';
+export const PASTED_SAVED_LINE = '문자는 휴대폰에 저장했어요. 첫 화면의 내 진료 기록에서 볼 수 있어요.';
+export const DROPPED_PASTE_TEXT = (n) => `${n}개는 정리하지 못했어요. 원문에서 확인하세요`;
+export const PASTED_SAVED_LINE_DELETED = '문자는 [원문 보기]에서 볼 수 있어요. 첫 화면의 내 진료 기록에서 열어요.';
+export const MAX_PASTE_CHARS = 5000;
 export const EMPTY_MSG = '받아 적은 말이 없어요. 아래 칸에 글로 적거나 닫아 주세요.';
 
 // ---------------------------------------------------------------------------------------------
@@ -56,11 +69,6 @@ export function showEnterRoomButton(flowState) {
   return Boolean(flowState && flowState.wants === true && flowState.phase === null && !flowState.saved);
 }
 
-/** [내 진료 기록] on the first screen: only when at least one record exists. */
-export function showRecordsButton(count) {
-  return Number.isInteger(count) && count >= 1;
-}
-
 /** Offer N0 on I4 itself (resuming a visit lands here without confirming the point before). */
 export function shouldOfferNotes(point, flowState) {
   return Boolean(isConsultPoint(point) && flowState && flowState.wants === null && flowState.phase === null && !flowState.saved);
@@ -80,6 +88,10 @@ export function finalNote(flowState) {
   const f = flowState || {};
   if (Array.isArray(f.items) && f.items.length) return { lead: null, saved: null };
   const stored = Boolean(f.record);
+  if (f.origin === 'paste') {
+    if (f.summary === 'none') return { lead: PASTED_SUMMARY_LATER, saved: stored ? PASTED_SAVED_LINE : null };
+    return { lead: PASTED_ALL_DELETED, saved: stored ? PASTED_SAVED_LINE_DELETED : null };
+  }
   if (f.summary === 'none') return { lead: SUMMARY_LATER, saved: stored ? SAVED_LINE : null };
   return { lead: ALL_DELETED, saved: stored ? SAVED_LINE_DELETED : null };
 }
@@ -203,7 +215,7 @@ export async function summarizeTranscript(rawText, {
 function blankState() {
   return {
     wants: null, // N0 answer: null not asked, true, false
-    phase: null, // null (the route screen shows) | n0 | n1 | n1-declined | n2 | n3 | full | n4
+    phase: null, // null (the route screen shows) | n0 | n1 | n1-declined | n2 | n3 | full | n4 | p0 (paste) | p1 (nothing found)
     consentAt: null,
     source: null, // listen | typed | sample
     lines: [], // text shown on N2, one entry per phrase (raw: dropped as soon as it is summarised)
@@ -223,6 +235,11 @@ function blankState() {
     idx: 0, // N4: which item; items.length is the last screen
     editing: false,
     saved: false, // a note was taken in this visit (I4 does not offer the button again)
+    origin: null, // 'paste' while the pasted-message screens (p0, p1, and N4 on its items) run
+    pasteText: '', // raw pasted text (p0 only: dropped as soon as it is scrubbed, and on leave)
+    pasteMsg: null, // a line under the paste box
+    pasteSample: false, // the box holds the example message (simulation)
+    visitRecord: null, // the visit's own record id, kept aside while a pasted message uses state.record
   };
 }
 
@@ -231,6 +248,9 @@ function blankState() {
  *   createListener  listen.js signature (the notes listener wraps it)
  *   sim()           true in simulation mode
  *   sample          the parsed data/sample-visit.json
+ *   sampleMessage   the parsed data/sample-message.json ({text}), simulation only
+ *   listenOn()      true when the optional doctor-speech transcription is switched on (default off)
+ *   nav             navigator (clipboard.readText for [붙여넣기])
  *   notesUrl        NOTES_URL ('' = rules only)
  *   fetch, now(), store, hospital, wakeLock {on, off}, onChange(state)
  *   setTimeout / clearTimeout, maxMs, simLineMs, declineMs, timeoutMs
@@ -240,6 +260,9 @@ export function createNotesFlow(deps = {}) {
     createListener: null,
     sim: () => false,
     sample: null,
+    sampleMessage: null,
+    listenOn: () => false,
+    nav: globalThis.navigator,
     notesUrl: '',
     fetch: globalThis.fetch,
     now: () => new Date(),
@@ -292,7 +315,8 @@ export function createNotesFlow(deps = {}) {
     token += 1;
     endCapture();
     awake(false);
-    st = { ...st, lines: [], typed: '' }; // raw text never outlives its screen
+    st = { ...st, lines: [], typed: '', pasteText: '', pasteMsg: null, pasteSample: false }; // raw text never outlives its screen
+    if (st.origin === 'paste') st = { ...st, origin: null, sample: false, record: st.visitRecord, visitRecord: null, transcript: '', items: [], pendingRecord: null };
     if (st.phase !== null) set({ phase: null, listening: false, editing: false });
   }
 
@@ -302,8 +326,18 @@ export function createNotesFlow(deps = {}) {
    * the end instead of silently discarding it.
    */
   function modeChanged() {
-    if (st.phase === 'n3' || st.phase === 'full' || st.phase === 'n4') return;
+    // The example message exists only in simulation: it goes when the mode changes, text the user typed stays.
+    if (st.pasteSample) { st = { ...st, pasteText: '', pasteMsg: null, pasteSample: false }; change(); }
+    if (['n3', 'full', 'n4', 'p0', 'p1'].includes(st.phase)) return;
     leave();
+  }
+
+  /** The optional transcription was switched off: its screens (N0..N2) end, the microphone with them. */
+  function listenSettingChanged() {
+    if (d.listenOn()) return;
+    if (['n0', 'n1', 'n1-declined', 'n2'].includes(st.phase)) leave();
+    if (st.wants !== null && st.phase === null) st = { ...st, wants: null };
+    change();
   }
 
   function reset() {
@@ -316,13 +350,21 @@ export function createNotesFlow(deps = {}) {
 
   /** Drops every text the flow holds in memory (settings: 진료 기록 모두 지우기). Records are not touched here. */
   function forget() {
-    st = { ...st, lines: [], typed: '', transcript: '', items: [], pendingRecord: null, record: null, idx: 0, editing: false };
+    // Like leave(): whatever screen was open (N2 with the microphone, a pasted message's N4) ends, so no
+    // button of it can mark the visit as noted or move the route on afterwards.
+    token += 1;
+    endCapture();
+    awake(false);
+    st = {
+      ...st, lines: [], typed: '', pasteText: '', pasteMsg: null, pasteSample: false, transcript: '', items: [], pendingRecord: null,
+      record: null, visitRecord: null, origin: null, sample: false, idx: 0, editing: false, listening: false, phase: null,
+    };
     change();
   }
 
   // ---- N0
   function askAfterConfirm() {
-    if (st.wants !== null || st.phase !== null) return false;
+    if (!d.listenOn() || st.wants !== null || st.phase !== null) return false;
     set({ phase: 'n0' });
     return true;
   }
@@ -334,7 +376,7 @@ export function createNotesFlow(deps = {}) {
 
   // ---- N1
   function enterRoom() {
-    if (st.wants !== true || st.phase !== null || st.saved || !tapReady()) return;
+    if (!d.listenOn() || st.wants !== true || st.phase !== null || st.saved || !tapReady()) return;
     awake(true); // the phone is shown to the doctor: keep the screen on
     set({ phase: 'n1' });
   }
@@ -362,7 +404,7 @@ export function createNotesFlow(deps = {}) {
   // ---- N2
   /** Called only from the doctor's tap on [네, 괜찮습니다]. Starts the capture. */
   function grantConsent() {
-    if (st.phase !== 'n1') return false;
+    if (st.phase !== 'n1' || !d.listenOn()) return false;
     const stamp = localStamp(d.now());
     const mine = ++token;
     const simOn = Boolean(d.sim());
@@ -496,14 +538,124 @@ export function createNotesFlow(deps = {}) {
       transcript: out.transcript, items: rec.items, dropped: out.dropped, summary: out.summary,
       usedSaved: out.usedSaved, idx: 0, editing: false, pendingRecord: rec,
     });
+    storeRecord(rec);
+    return true;
+  }
+
+  /** The visit's own note marks the visit as noted; a pasted message never does. */
+  const savedFlag = () => (st.origin === 'paste' ? {} : { saved: true });
+
+  /** Stores a built record and moves to N4 (or asks first when the store is full). */
+  function storeRecord(rec) {
     const added = addRecord(rec, storeArg());
     if (added.ok) {
-      set({ record: rec.id, pendingRecord: null, saveNote: null, saved: true, phase: 'n4' });
+      set({ record: rec.id, pendingRecord: null, saveNote: null, ...savedFlag(), phase: 'n4' });
     } else if (added.reason === 'full') {
       set({ phase: 'full', saveNote: null });
     } else {
-      set({ record: null, pendingRecord: null, saveNote: '이 휴대폰에는 저장하지 못했어요.', saved: true, phase: 'n4' });
+      set({ record: null, pendingRecord: null, saveNote: '이 휴대폰에는 저장하지 못했어요.', ...savedFlag(), phase: 'n4' });
     }
+  }
+
+  // ---- pasted hospital message (P0 paste, P1 nothing found)
+  /** [병원 문자 넣기]: opens the paste screen. The visit's own record id is parked until it closes. */
+  function openPaste() {
+    if (st.phase !== null || !tapReady()) return false;
+    token += 1;
+    st = {
+      ...st, origin: 'paste', visitRecord: st.record, record: null, pasteText: '', pasteMsg: null, pasteSample: false,
+      sample: false, usedSaved: false, transcript: '', items: [], dropped: 0, summary: null, idx: 0, editing: false,
+      pendingRecord: null, saveNote: null,
+    };
+    set({ phase: 'p0' });
+    return true;
+  }
+
+  /** Remembers the box text without a redraw (a redraw would drop the keyboard). */
+  function setPasteText(text) {
+    st = { ...st, pasteText: String(text ?? '').slice(0, MAX_PASTE_CHARS), pasteSample: false };
+  }
+
+  /** [붙여넣기]: reads the clipboard when the browser allows it; every failure shows the hint. */
+  async function pasteFromClipboard() {
+    if (st.phase !== 'p0' || !tapReady()) return false;
+    const nav = d.nav;
+    if (!nav || !nav.clipboard || typeof nav.clipboard.readText !== 'function') {
+      set({ pasteMsg: PASTE_HINT });
+      return false;
+    }
+    const mine = token;
+    let text = null;
+    try { text = await nav.clipboard.readText(); } catch { text = null; }
+    if (mine !== token || st.phase !== 'p0') return false;
+    if (typeof text !== 'string') { set({ pasteMsg: PASTE_HINT }); return false; }
+    if (!text.trim()) { set({ pasteMsg: PASTE_EMPTY_MSG }); return false; }
+    set({ pasteText: text.slice(0, MAX_PASTE_CHARS), pasteMsg: null, pasteSample: false });
+    return true;
+  }
+
+  /** [예시 문자 넣기] (simulation only): fills the box with the fictional message. */
+  function fillSampleMessage() {
+    if (st.phase !== 'p0' || !d.sim() || !d.sampleMessage || typeof d.sampleMessage.text !== 'string') return false;
+    set({ pasteText: d.sampleMessage.text, pasteMsg: null, pasteSample: true });
+    return true;
+  }
+
+  /** The hospital name in a leading "[...]" tag of the (scrubbed) message, if it looks like one. */
+  const hospitalOf = (text) => {
+    const m = /^\s*\[([^\]\n]{2,20}(?:병원|의원|센터))\]/.exec(text);
+    return m ? m[1] : null;
+  };
+
+  /**
+   * [정리하기]: rules only, on the phone. The raw text is replaced by the scrubbed text before anything
+   * else is stored or shown. Items go to the N4 confirm screens; nothing found goes to P1.
+   */
+  function organise() {
+    if (st.phase !== 'p0') return false;
+    const raw = String(st.pasteText || '');
+    if (!raw.trim()) return false;
+    const today = localDate(d.now());
+    let res;
+    try { res = parseHospitalText(raw, { today }); } catch { res = null; }
+    const text = res && typeof res.text === 'string' ? res.text.trim() : '';
+    if (!text) { set({ pasteText: '', pasteMsg: null, pasteSample: false, phase: 'p1', transcript: '' }); return true; }
+    const items = res && res.ok ? orderItems(res.items) : [];
+    if (!items.length) {
+      set({ pasteText: '', pasteMsg: null, transcript: text, dropped: res ? res.dropped : 0, phase: 'p1' }); // pasteSample stays: [그냥 저장] needs it
+      return true;
+    }
+    // the example message (simulation) is stored as an example: its band, speech note and share text apply
+    const sampleRun = Boolean(st.pasteSample && d.sim());
+    const rec = makeRecord({
+      date: today, hospital: hospitalOf(text), consentAt: null, source: sampleRun ? 'sample' : 'pasted', msg: sampleRun,
+      transcript: text, items, dropped: res.dropped, summary: 'rules', existingIds: listRecords(storeArg()).map((r) => r.id),
+    });
+    set({
+      pasteText: '', pasteMsg: null, pasteSample: false, sample: sampleRun, transcript: text, items: rec.items, dropped: res.dropped,
+      summary: 'rules', idx: 0, editing: false, pendingRecord: rec,
+    });
+    storeRecord(rec);
+    return true;
+  }
+
+  /** P1 [다시 넣기]: back to an empty paste box. */
+  function pasteAgain() {
+    if (st.phase !== 'p1' || !tapReady()) return false;
+    set({ phase: 'p0', transcript: '', dropped: 0, pasteText: '', pasteMsg: null, pasteSample: false });
+    return true;
+  }
+
+  /** P1 [그냥 저장]: saves the scrubbed text only (no items). */
+  function saveTextOnly() {
+    if (st.phase !== 'p1' || !st.transcript) return false;
+    const sampleRun = Boolean(st.pasteSample && d.sim());
+    const rec = makeRecord({
+      date: localDate(d.now()), hospital: hospitalOf(st.transcript), consentAt: null, source: sampleRun ? 'sample' : 'pasted', msg: sampleRun,
+      transcript: st.transcript, items: [], dropped: st.dropped, summary: 'none', existingIds: listRecords(storeArg()).map((r) => r.id),
+    });
+    set({ items: [], dropped: 0, summary: 'none', idx: 0, editing: false, pendingRecord: rec });
+    storeRecord(rec);
     return true;
   }
 
@@ -515,11 +667,11 @@ export function createNotesFlow(deps = {}) {
       dropOldest(storeArg());
       const added = addRecord(rec, storeArg());
       set({
-        record: added.ok ? rec.id : null, pendingRecord: null, saved: true, phase: 'n4',
+        record: added.ok ? rec.id : null, pendingRecord: null, ...savedFlag(), phase: 'n4',
         saveNote: added.ok ? null : '이 휴대폰에는 저장하지 못했어요.',
       });
     } else {
-      set({ record: null, pendingRecord: null, saved: true, phase: 'n4', saveNote: '기록을 저장하지 않았어요.' });
+      set({ record: null, pendingRecord: null, ...savedFlag(), phase: 'n4', saveNote: '기록을 저장하지 않았어요.' });
     }
     return true;
   }
@@ -572,6 +724,12 @@ export function createNotesFlow(deps = {}) {
     if (st.phase !== 'n4') return null;
     const id = st.record;
     token += 1;
+    if (st.origin === 'paste') {
+      // A pasted message is not part of the visit: the visit's own record and its "noted" flag stay as they were.
+      st = { ...st, origin: null, sample: false, record: st.visitRecord, visitRecord: null, transcript: '', items: [], pendingRecord: null };
+      set({ phase: null, editing: false });
+      return id;
+    }
     set({ phase: null, saved: true, editing: false });
     return id;
   }
@@ -580,7 +738,8 @@ export function createNotesFlow(deps = {}) {
     get state() { return st; },
     askAfterConfirm, answerN0, enterRoom, declineConsent, closeDeclined, grantConsent, openTyped, stop,
     cancelCapture, resolveFull, itemAction, saveEdit, cancelEdit, prevItem, finish, leave, reset,
-    setTyped, modeChanged, forget, touchScreen, tapOk: tapReady,
+    setTyped, modeChanged, listenSettingChanged, forget, touchScreen, tapOk: tapReady,
+    openPaste, setPasteText, pasteFromClipboard, fillSampleMessage, organise, pasteAgain, saveTextOnly,
   };
 }
 
@@ -606,7 +765,19 @@ export function recordTitle(rec) {
  * when `sim` is true: a real visit never offers the example conversation back.
  */
 export function recordForDate(records, date, { sim = true } = {}) {
-  return (records || []).find((r) => r.date === date && (sim || r.source !== 'sample')) || null;
+  return (records || []).find((r) => r.date === date && isVisitRecord(r, { sim })) || null;
+}
+
+/** A hospital message (pasted, or the example message): it says nothing about what was said in a visit. */
+export const isMessageRecord = (rec) => Boolean(rec && (rec.source === 'pasted' || rec.msg === true));
+
+/**
+ * A record of a visit itself: heard (listen), typed or the example conversation (only in simulation).
+ * A pasted message is never "today's visit", whatever day it was put in.
+ */
+export function isVisitRecord(rec, { sim = true } = {}) {
+  if (!rec || isMessageRecord(rec)) return false;
+  return rec.source === 'listen' || rec.source === 'typed' || (rec.source === 'sample' && Boolean(sim));
 }
 
 /** [달력에 넣기] for a next-visit item needs a real date: the stored one or one the user picked. */
@@ -673,7 +844,7 @@ export function medStartDate(record, item, today) {
   const days = item && item.med && Number.isInteger(item.med.days) ? item.med.days : 30;
   const visit = record && record.date;
   if (parseIsoDate(visit) && parseIsoDate(today) && visit <= today && today < addDays(visit, days)) {
-    return { date: visit, fromRecord: true };
+    return isMessageRecord(record) ? { date: visit, fromRecord: true, pasted: true } : { date: visit, fromRecord: true };
   }
   return { date: today, fromRecord: false };
 }
@@ -684,7 +855,7 @@ export function medStartNote(start, days) {
   const span = Number.isInteger(days) ? `${n}일 동안 매일 알려 줘요.` : `며칠 치인지 말씀이 없어서 ${n}일 동안 매일 알려 줘요.`;
   if (start && start.fromRecord) {
     const d = parseIsoDate(start.date);
-    return `진료 받은 날(${d.m}월 ${d.d}일)부터 세어요. ${span}`;
+    return `${start.pasted ? '문자를 넣은 날' : '진료 받은 날'}(${d.m}월 ${d.d}일)부터 세어요. ${span}`;
   }
   return `오늘부터 세어요. ${span}`;
 }
@@ -697,7 +868,15 @@ export async function resummarise(id, { store = null, url = '', fetch: fetchImpl
   const rec = getRecord(id, store);
   if (!rec) return { ok: false, reason: 'missing' };
   if (!String(rec.transcript || '').trim()) return { ok: false, reason: 'empty' };
-  const out = await summarizeTranscript(rec.transcript, { url, fetch: fetchImpl, timeoutMs, today: today || rec.date || localDate(new Date()) });
+  const when = today || rec.date || localDate(new Date());
+  // A pasted hospital message is organised by its own rules, on the phone, never by the speech summary.
+  const out = isMessageRecord(rec)
+    ? (() => {
+      const r = parseHospitalText(rec.transcript, { today: when });
+      const items = r.ok ? orderItems(r.items) : [];
+      return { items, dropped: r.dropped, summary: items.length ? 'rules' : 'none' };
+    })()
+    : await summarizeTranscript(rec.transcript, { url, fetch: fetchImpl, timeoutMs, today: when });
   if (out.summary === 'none') return { ok: false, reason: 'none' };
   const items = out.items.map((it) => ({ ...it, status: 'unconfirmed', edited: false }));
   const next = updateRecord(id, { items, dropped: out.dropped, summary: out.summary }, store);

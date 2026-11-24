@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   arrow: '2d', // '2d' | '3d' (used from stage 4)
   largeText: false,
   sim: false, // used from stage 4
+  listenNotes: false, // optional: write down the doctor's words (off until the owner turns it on in settings)
 });
 
 const ENUMS = {
@@ -18,7 +19,7 @@ const ENUMS = {
   rate: ['normal', 'slow'],
   arrow: ['2d', '3d'],
 };
-const BOOLS = ['sound', 'largeText', 'sim'];
+const BOOLS = ['sound', 'largeText', 'sim', 'listenNotes'];
 
 /** Turns any parsed value into a safe `{settings, lastPointId}`. Drops unknown keys. */
 export function sanitize(raw, knownPointIds = null) {
