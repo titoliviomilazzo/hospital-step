@@ -33,6 +33,10 @@ export const TAP_GUARD_MS = 600; // taps this soon after a screen appears are ig
 export const NO_SAMPLE_MSG = '예시 대화를 불러오지 못했어요. 글로 적어 주세요.';
 export const PASTED_BAND = '병원 문자에서 정리';
 export const SAMPLE_MESSAGE_BAND = '예시 문자: 가상의 내용이에요';
+// The fictional example message lives in code, so [예시 문자 넣기] never depends on a fetch
+// (data/sample-message.json is kept identical by tests/paste-flow.test.mjs).
+export const SAMPLE_MESSAGE_TEXT = '[분당서울대병원] 홍길동님 2027년 3월 2일(화) 10:30 노인의료센터 외래 진료가 예약되었습니다. 진료 1시간 전까지 1동 1층 접수처로 오세요.\n\n[분당서울대병원] 복용 안내: 혈압약 1일 1회 아침 식후 30분, 7일분';
+export const SAMPLE_MESSAGE_FAILED = '예시 문자를 불러오지 못했어요. 글 입력칸에 직접 넣어 주세요.';
 export const PASTE_HINT = '글 입력칸을 길게 눌러 붙여넣어 주세요';
 export const PASTE_EMPTY_MSG = '복사된 글이 없어요. 문자를 길게 눌러 복사한 뒤 다시 눌러 주세요.';
 export const PASTE_PRIVACY_LINE = '붙여넣은 글은 이 휴대폰 안에서만 정리해요.';
@@ -261,6 +265,7 @@ export function createNotesFlow(deps = {}) {
     sim: () => false,
     sample: null,
     sampleMessage: null,
+    sampleFallbackText: SAMPLE_MESSAGE_TEXT,
     listenOn: () => false,
     nav: globalThis.navigator,
     notesUrl: '',
@@ -596,8 +601,11 @@ export function createNotesFlow(deps = {}) {
 
   /** [예시 문자 넣기] (simulation only): fills the box with the fictional message. */
   function fillSampleMessage() {
-    if (st.phase !== 'p0' || !d.sim() || !d.sampleMessage || typeof d.sampleMessage.text !== 'string') return false;
-    set({ pasteText: d.sampleMessage.text, pasteMsg: null, pasteSample: true });
+    if (st.phase !== 'p0' || !d.sim()) return false;
+    const fetched = d.sampleMessage && typeof d.sampleMessage.text === 'string' ? d.sampleMessage.text : '';
+    const text = fetched.trim() ? fetched : d.sampleFallbackText;
+    if (typeof text !== 'string' || !text.trim()) { set({ pasteMsg: SAMPLE_MESSAGE_FAILED }); return false; }
+    set({ pasteText: text, pasteMsg: null, pasteSample: true });
     return true;
   }
 

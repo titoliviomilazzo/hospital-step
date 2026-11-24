@@ -1840,7 +1840,7 @@ async function start() {
   } catch {
     sample = null;
   }
-  // The example hospital message (simulation only) is optional too: without it [예시 문자 넣기] does nothing.
+  // The example hospital message (simulation only) is optional: the text is also built into notes-flow.js, so a failed fetch changes nothing.
   let sampleMessage = null;
   try {
     const res = await fetch(versioned('data/sample-message.json'));
