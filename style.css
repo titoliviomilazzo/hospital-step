@@ -42,6 +42,10 @@ body.modal-open { overflow: hidden; }
 }
 .top-row { display: flex; align-items: center; gap: 8px; min-height: 48px; }
 .pill { font-weight: 800; font-size: 1.25rem; }
+.top-icon { width: 36px; height: 36px; border-radius: 9px; flex: none; }
+/* Wordmark on the first question screen only; the app name is not repeated on later screens. */
+.brand { margin: 4px 0 0; }
+.brand img { display: block; width: auto; height: 56px; max-width: 100%; object-fit: contain; object-position: left; }
 .progress { margin-left: auto; font-size: 2rem; font-weight: 900; line-height: 1; }
 #btn-settings { margin-left: 8px; }
 .progress:empty + #btn-settings { margin-left: auto; }

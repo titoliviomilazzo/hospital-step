@@ -4,41 +4,47 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>병원한걸음</title>
-  <link rel="stylesheet" href="style.css?v=2026-11-24.2159">
+  <meta name="theme-color" content="#2d2f2f">
+  <meta name="apple-mobile-web-app-title" content="병원한걸음">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="img/icon-96.png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css?v=2026-11-26.1202">
   <script type="importmap">
 {
   "imports": {
-    "./config.js": "./config.js?v=2026-11-24.2159",
-    "./js/alight.js": "./js/alight.js?v=2026-11-24.2159",
-    "./js/app.js": "./js/app.js?v=2026-11-24.2159",
-    "./js/areamap.js": "./js/areamap.js?v=2026-11-24.2159",
-    "./js/arrival.js": "./js/arrival.js?v=2026-11-24.2159",
-    "./js/arrow2d.js": "./js/arrow2d.js?v=2026-11-24.2159",
-    "./js/arrow3d.js": "./js/arrow3d.js?v=2026-11-24.2159",
-    "./js/clips.js": "./js/clips.js?v=2026-11-24.2159",
-    "./js/compass.js": "./js/compass.js?v=2026-11-24.2159",
-    "./js/contrast.js": "./js/contrast.js?v=2026-11-24.2159",
-    "./js/floor.js": "./js/floor.js?v=2026-11-24.2159",
-    "./js/help.js": "./js/help.js?v=2026-11-24.2159",
-    "./js/ics.js": "./js/ics.js?v=2026-11-24.2159",
-    "./js/intent.js": "./js/intent.js?v=2026-11-24.2159",
-    "./js/korean.js": "./js/korean.js?v=2026-11-24.2159",
-    "./js/listen.js": "./js/listen.js?v=2026-11-24.2159",
-    "./js/navarrow.js": "./js/navarrow.js?v=2026-11-24.2159",
-    "./js/notes-flow.js": "./js/notes-flow.js?v=2026-11-24.2159",
-    "./js/notes-listen.js": "./js/notes-listen.js?v=2026-11-24.2159",
-    "./js/notes-store.js": "./js/notes-store.js?v=2026-11-24.2159",
-    "./js/notes-ui.js": "./js/notes-ui.js?v=2026-11-24.2159",
-    "./js/notes.js": "./js/notes.js?v=2026-11-24.2159",
-    "./js/notices.js": "./js/notices.js?v=2026-11-24.2159",
-    "./js/paper.js": "./js/paper.js?v=2026-11-24.2159",
-    "./js/pictos.js": "./js/pictos.js?v=2026-11-24.2159",
-    "./js/route.js": "./js/route.js?v=2026-11-24.2159",
-    "./js/sim.js": "./js/sim.js?v=2026-11-24.2159",
-    "./js/storage.js": "./js/storage.js?v=2026-11-24.2159",
-    "./js/version.js": "./js/version.js?v=2026-11-24.2159",
-    "./js/voice.js": "./js/voice.js?v=2026-11-24.2159",
-    "./js/zoom.js": "./js/zoom.js?v=2026-11-24.2159"
+    "./config.js": "./config.js?v=2026-11-26.1202",
+    "./js/alight.js": "./js/alight.js?v=2026-11-26.1202",
+    "./js/app.js": "./js/app.js?v=2026-11-26.1202",
+    "./js/areamap.js": "./js/areamap.js?v=2026-11-26.1202",
+    "./js/arrival.js": "./js/arrival.js?v=2026-11-26.1202",
+    "./js/arrow2d.js": "./js/arrow2d.js?v=2026-11-26.1202",
+    "./js/arrow3d.js": "./js/arrow3d.js?v=2026-11-26.1202",
+    "./js/clips.js": "./js/clips.js?v=2026-11-26.1202",
+    "./js/compass.js": "./js/compass.js?v=2026-11-26.1202",
+    "./js/contrast.js": "./js/contrast.js?v=2026-11-26.1202",
+    "./js/floor.js": "./js/floor.js?v=2026-11-26.1202",
+    "./js/help.js": "./js/help.js?v=2026-11-26.1202",
+    "./js/ics.js": "./js/ics.js?v=2026-11-26.1202",
+    "./js/intent.js": "./js/intent.js?v=2026-11-26.1202",
+    "./js/korean.js": "./js/korean.js?v=2026-11-26.1202",
+    "./js/listen.js": "./js/listen.js?v=2026-11-26.1202",
+    "./js/navarrow.js": "./js/navarrow.js?v=2026-11-26.1202",
+    "./js/notes-flow.js": "./js/notes-flow.js?v=2026-11-26.1202",
+    "./js/notes-listen.js": "./js/notes-listen.js?v=2026-11-26.1202",
+    "./js/notes-store.js": "./js/notes-store.js?v=2026-11-26.1202",
+    "./js/notes-ui.js": "./js/notes-ui.js?v=2026-11-26.1202",
+    "./js/notes.js": "./js/notes.js?v=2026-11-26.1202",
+    "./js/notices.js": "./js/notices.js?v=2026-11-26.1202",
+    "./js/paper.js": "./js/paper.js?v=2026-11-26.1202",
+    "./js/pictos.js": "./js/pictos.js?v=2026-11-26.1202",
+    "./js/route.js": "./js/route.js?v=2026-11-26.1202",
+    "./js/sim.js": "./js/sim.js?v=2026-11-26.1202",
+    "./js/storage.js": "./js/storage.js?v=2026-11-26.1202",
+    "./js/version.js": "./js/version.js?v=2026-11-26.1202",
+    "./js/voice.js": "./js/voice.js?v=2026-11-26.1202",
+    "./js/zoom.js": "./js/zoom.js?v=2026-11-26.1202"
   }
 }
   </script>
@@ -46,6 +52,7 @@
 <body>
   <header class="top">
     <div class="top-row">
+      <img class="top-icon" src="img/icon-96.png" alt="" width="36" height="36">
       <span id="stage-pill" class="pill">1단계 방문 준비</span>
       <span id="progress" class="progress" aria-live="polite"></span>
       <button id="btn-settings" class="btn small" type="button" aria-label="설정 열기">설정</button>
@@ -54,6 +61,7 @@
   </header>
 
   <main id="main" class="main" tabindex="-1">
+    <div id="brand" class="brand" hidden><img src="img/wordmark.png" alt="병원한걸음" width="573" height="160"></div>
     <div id="live" aria-live="polite" aria-atomic="true"><h1 id="instruction" class="instruction"></h1></div>
     <div id="screen"></div>
     <noscript><p class="instruction">이 앱은 자바스크립트가 필요해요.</p></noscript>
@@ -71,6 +79,6 @@
   <div id="overlay-companion" class="overlay" hidden></div>
   <div id="overlay-settings" class="overlay" hidden></div>
 
-  <script type="module" src="js/app.js?v=2026-11-24.2159"></script>
+  <script type="module" src="js/app.js?v=2026-11-26.1202"></script>
 </body>
 </html>

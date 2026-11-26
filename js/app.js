@@ -136,6 +136,12 @@ export function initialState(lastPointId = null) {
   };
 }
 
+/** The wordmark shows only on the very first question (which hospital), never while editing an answer
+ * and never over a record or paste screen. */
+export function showBrand(state, notesScreen = null) {
+  return !notesScreen && state.index < 0 && state.prepStep === 'hospital' && !state.editing;
+}
+
 export function screenOf(state, route) {
   return state.index < 0 ? 'prepare' : route.points[state.index].stage;
 }
@@ -1628,6 +1634,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
       $('progress').setAttribute('aria-label', `이 단계 ${prog.total}개 중 ${prog.cur}번째`);
       renderDots(prog.cur, prog.total);
     }
+    $('brand').hidden = !showBrand(state, nScreen);
     if (nScreen) setInstruction(nScreen.instruction);
     else if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
     else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);

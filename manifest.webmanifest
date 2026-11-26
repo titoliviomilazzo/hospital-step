@@ -1,0 +1,15 @@
+{
+  "name": "병원한걸음",
+  "short_name": "병원한걸음",
+  "description": "어르신이 혼자서도 병원에 다녀올 수 있게",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2d2f2f",
+  "icons": [
+    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
