@@ -84,6 +84,15 @@ export function reAskFor(prev, next, parsedReAsk = null, heard = null) {
 }
 const BUS_NOTE = '버스 안 안내 방송과 화면에 나오는 정류장 이름을 확인하세요. 잘 모르시겠으면 기사님께 물어보세요.';
 export const ARRIVED_TEXT = ARRIVED_SENTENCE;
+/** Shown to the doctor on I4 (never spoken): three lines, in this order. */
+export const ASK_DOCTOR_LINES = [
+  '선생님, 제가 잘 잊어버려요.',
+  '약 먹는 법과 다음 진료 날짜를 종이에 적어 주시거나 문자로 보내 주세요.',
+  '감사합니다.',
+];
+export const ASK_DOCTOR_BUTTON = '선생님께 보여 드리기';
+/** Always-visible reminder on points with `keepPapers` (I5, I8). */
+export const KEEP_PAPERS_TEXT = '받은 종이는 버리지 말고 가방에 넣어 두세요. 처방전, 영수증, 다음 예약 안내';
 export const TODAY_ORDER_TITLE = '오늘 순서';
 export const DEMO_NOTE = '시연용 예시 일정이에요. 실제 검사와 순서는 사람마다 달라요.';
 // Get-off alert texts (the spoken versions are the alert-* clips in clips.js).
@@ -131,6 +140,7 @@ export function initialState(lastPointId = null) {
     manual: { ...BLANK_MANUAL },
     lastPointId,
     helpOpen: false,
+    askOpen: false, // the 'show the doctor' card on I4
     settingsOpen: false,
     companionOpen: false,
   };
@@ -360,6 +370,10 @@ export function nextState(state, action, route) {
       return { ...state, helpOpen: true };
     case 'CLOSE_HELP':
       return { ...state, helpOpen: false };
+    case 'OPEN_ASK':
+      return { ...state, askOpen: true };
+    case 'CLOSE_ASK':
+      return { ...state, askOpen: false };
     case 'OPEN_SETTINGS':
       return { ...state, settingsOpen: true };
     case 'CLOSE_SETTINGS':
@@ -799,11 +813,6 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
       } }, resumeLabel(state, route)));
     }
 
-    // [내 진료 기록]: always on the first screen (with no record it opens an empty list that offers the paste screen).
-    if (step === 'hospital' && !state.editing) {
-      main.append(h('button', { class: 'btn wide', id: 'btn-records', onclick: () => notesUi.openList() }, '내 진료 기록'));
-    }
-
     const heroKinds = HERO_BY_STEP[step] || [];
     if (heroKinds.length) {
       main.append(h('div', { class: `hero hero-${step}`, id: 'hero' }, heroKinds.map((k) => svgNode(heroSvg(k)))));
@@ -890,7 +899,12 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
 
   /** Small text button at the bottom of a wizard screen: back one screen, or back to confirm. */
   function wizardFooter() {
-    if (state.prepStep === 'hospital' && !state.editing) return null;
+    // First screen: the question, hero and answers come first; [내 진료 기록] is a small button at the bottom
+    // (always shown; with no record it opens an empty list that offers the paste screen).
+    if (state.prepStep === 'hospital' && !state.editing) {
+      return h('div', { class: 'bottom-links' },
+        h('button', { class: 'btn small ghost', id: 'btn-records', onclick: () => notesUi.openList() }, '내 진료 기록'));
+    }
     const label = state.editing ? '확인 화면으로 돌아가기'
       : (state.prepStep === 'checklist' ? '확인 화면으로' : '이전 질문으로');
     return h('div', { class: 'bottom-links' },
@@ -1409,6 +1423,8 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
   function renderPoint(p) {
     const main = h('div', { class: 'stack' });
     const arrivedHere = state.arrived && state.index === route.points.length - 1;
+    // Always visible, first on the screen (never inside the collapsible details).
+    if (p.keepPapers ) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT));
 
     // The user said yes on N0: the doctor's consent card (N1) opens from this one big button, which
     // sits first so it is above the bar without scrolling, even in simulation mode.
@@ -1418,14 +1434,24 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
         if (flow.state.phase === 'n1') say('notes-consent', NOTES_SENTENCES.consent); // an ignored early tap says nothing
       } }, '진료실에 들어왔어요'));
     }
+    // I4: nothing to do in the room, so one button shows the doctor a card (never spoken).
+    if (isConsultPoint(p)) {
+      main.append(h('button', { class: 'btn wide notes-btn', id: 'btn-ask-doctor', onclick: () => {
+        openerSel = '#btn-ask-doctor';
+        dispatch({ type: 'OPEN_ASK' });
+      } }, ASK_DOCTOR_BUTTON));
+    }
 
     if (arrivedHere) {
-      main.append(h('div', { class: 'picto-box done', id: 'arrow-box' }, svgNode(doneSvg())));
+      // The buttons come before the picture so they stay above the bar without scrolling.
       const rec = todayRecord();
       if (rec) {
         main.append(h('button', { class: 'btn wide', id: 'btn-today-record', onclick: () => notesUi.openRecord(rec.id, { read: true }) },
           '오늘 진료 내용 다시 듣기'));
       }
+      // Always offered here: paste the hospital text message (same screen as the notes empty state).
+      main.append(h('button', { class: 'btn wide', id: 'btn-arrived-paste', onclick: () => { flow.openPaste(); } }, '병원 문자 넣기'));
+      main.append(h('div', { class: 'picto-box done', id: 'arrow-box' }, svgNode(doneSvg())));
     } else {
       // The get-off alert panel sits right under the instruction so its button never needs scrolling.
       // Target points (O1/R1) show it below the arrow block instead, so the arrow stays on top.
@@ -1487,6 +1513,14 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     return card;
   }
 
+  function buildAsk() {
+    const card = h('div', { class: 'overlay-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': '선생님께 보여 드리는 글' });
+    for (const line of ASK_DOCTOR_LINES) card.append(h('p', { class: 'help-sentence ask-line' }, line));
+    card.append(h('button', { class: 'btn wide primary', id: 'btn-ask-close',
+      onclick: () => { dispatch({ type: 'CLOSE_ASK' }); } }, '닫기'));
+    return card;
+  }
+
   /** Builds an overlay once when it opens and clears it when it closes; never rebuilt while open. */
   function syncOverlay(el, isOpen, build) {
     el.hidden = !isOpen;
@@ -1516,10 +1550,11 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
 
   function renderOverlays() {
     syncOverlay($('overlay-help'), state.helpOpen, buildHelp);
+    syncOverlay($('overlay-ask'), state.askOpen, buildAsk);
     syncOverlay($('overlay-companion'), state.companionOpen && Boolean(support), companionCard);
     syncOverlay($('overlay-settings'), state.settingsOpen, settingsCard);
 
-    const open = state.helpOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
+    const open = state.helpOpen || state.askOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
     document.body.classList.toggle('modal-open', open);
     syncRecIndicator(open);
     setBackgroundInert(open);
@@ -1642,7 +1677,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
     // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
     $('instruction').classList.toggle('compact', Boolean((p && p.alertCoord) || (nScreen && nScreen.compact)
-      || (p && isConsultPoint(p) && roomButtonShown()))); // I4 with the room button: the button must stay above the bar
+      || (p && isConsultPoint(p)) || (p && state.arrived && state.index === route.points.length - 1))); // I4 / arrival: the room / show-the-doctor buttons must stay above the bar
     areaHost = null; // set again only when this screen builds a map
     syncArrival(p);
     syncCompass(p);
@@ -1660,7 +1695,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     restoreUiState($('screen'), saved);
     // The document scrolls, not #main. Go to the top only when the screen changed, never for a
     // background re-render and never while an overlay is open.
-    const overlayOpen = state.helpOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
+    const overlayOpen = state.helpOpen || state.askOpen || (state.companionOpen && Boolean(support)) || state.settingsOpen;
     const key = `${screenKeyOf(state, route)}|${nScreen ? nScreen.key : ''}`;
     if (shouldScrollTop(lastScreenKey, key, overlayOpen)) {
       if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
@@ -1678,7 +1713,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     syncBarHeight();
     watchBar();
     renderOverlays();
-    if (!(state.helpOpen || state.settingsOpen || (state.companionOpen && Boolean(support)))) autoStartArrow(p);
+    if (!(state.helpOpen || state.askOpen || state.settingsOpen || (state.companionOpen && Boolean(support)))) autoStartArrow(p);
   }
 
   // ------------------------------------------------------------ bar wiring (static buttons)
@@ -1732,6 +1767,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (state.helpOpen) { stopSpeaking(); dispatch({ type: 'CLOSE_HELP' }); }
+    else if (state.askOpen) dispatch({ type: 'CLOSE_ASK' });
     else if (state.companionOpen) dispatch({ type: 'CLOSE_COMPANION' });
     else if (state.settingsOpen) dispatch({ type: 'CLOSE_SETTINGS' });
   });
@@ -1861,4 +1897,16 @@ async function start() {
   boot(route, support, floor, area, sample, sampleMessage);
 }
 
-if (typeof document !== 'undefined') start();
+/** Offline support: a service worker (sw.js) lets a reload open the app with no signal. Browser only, https or localhost. */
+function registerServiceWorker() {
+  if (typeof navigator === 'undefined' || typeof location === 'undefined' || !('serviceWorker' in navigator)) return;
+  const secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!secure) return;
+  // The URL has no ?v on purpose: the browser itself compares the bytes of sw.js on every visit.
+  navigator.serviceWorker.register(new URL('sw.js', document.baseURI).href, { scope: './' }).catch(() => {});
+}
+
+if (typeof document !== 'undefined') {
+  start();
+  registerServiceWorker();
+}
