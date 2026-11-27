@@ -7,7 +7,7 @@ export const STORAGE_KEY = 'hospital-step.v2'; // v2: the route grew to 17 point
 export const DEFAULT_SETTINGS = Object.freeze({
   sound: true,
   voice: 'f', // 'f' female, 'm' male
-  rate: 'slow', // 'normal' | 'slow'
+  rate: 'normal', // 'normal' (1.2x recordings) | 'relaxed' (1.0x); an old stored 'slow' is invalid and falls back to this
   arrow: '2d', // '2d' | '3d' (used from stage 4)
   largeText: false,
   sim: false, // used from stage 4
@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 const ENUMS = {
   voice: ['f', 'm'],
-  rate: ['normal', 'slow'],
+  rate: ['normal', 'relaxed'],
   arrow: ['2d', '3d'],
 };
 const BOOLS = ['sound', 'largeText', 'sim', 'listenNotes'];

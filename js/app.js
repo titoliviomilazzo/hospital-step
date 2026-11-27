@@ -1622,7 +1622,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
       h('p', { class: 'setting-title' }, '목소리'),
       radios('voice', [['f', '여성 목소리'], ['m', '남성 목소리']]),
       h('p', { class: 'setting-title' }, '말하는 속도'),
-      radios('rate', [['normal', '보통'], ['slow', '천천히']]),
+      radios('rate', [['normal', '보통'], ['relaxed', '천천히']]),
       h('p', { class: 'setting-title' }, '화살표 종류'),
       radios('arrow', [['2d', '평면'], ['3d', '입체']]),
       reducedMotion() ? h('p', { class: 'muted' }, '움직임 줄이기 설정이 켜져 있어서 평면 화살표만 보여요.') : null,

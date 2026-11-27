@@ -7,19 +7,20 @@
 import { versioned } from './version.js';
 
 export const AUDIO_ROOT = 'audio';
-const MP3_PLAYBACK_RATE = { normal: 1, slow: 0.9 };
-const SPEECH_RATE = { normal: 0.95, slow: 0.8 };
+// Recorded clips play at 1.2x by default (owner found 1.0x too slow); 'relaxed' is the old natural speed.
+const MP3_PLAYBACK_RATE = { normal: 1.2, relaxed: 1 };
+const SPEECH_RATE = { normal: 1.15, relaxed: 0.95 };
 
 export function audioPath(voice, clipId) {
   return `${AUDIO_ROOT}/${voice}/${clipId}.mp3`;
 }
 
 export function mp3RateFor(rate) {
-  return MP3_PLAYBACK_RATE[rate] ?? MP3_PLAYBACK_RATE.slow;
+  return MP3_PLAYBACK_RATE[rate] ?? MP3_PLAYBACK_RATE.normal;
 }
 
 export function speechRateFor(rate) {
-  return SPEECH_RATE[rate] ?? SPEECH_RATE.slow;
+  return SPEECH_RATE[rate] ?? SPEECH_RATE.normal;
 }
 
 /** Picks a Korean voice from `speechSynthesis.getVoices()`; prefers ko-KR, then any ko. */
