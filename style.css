@@ -116,11 +116,14 @@ h2 { font-size: 1.1em; margin: 0 0 8px; }
 .confirm-value.unknown { color: var(--muted); }
 .edit-btn { min-height: 64px; min-width: 88px; font-size: 24px; flex: 0 0 auto; }
 
-/* Question screens: a compact hero illustration above the choices (72px), so the answers fit above the bar. */
+/* Question screens: a hero illustration above the choices. Its height grows with the screen height
+   (96px at 664px tall, 132px max at 700px, 72px minimum) so the answer buttons stay above the bar; on 664px
+   screens the [말로 대답하기] button may need a scroll. */
 .hero { display: flex; justify-content: center; align-items: center; gap: 12px; }
 .hero svg { height: var(--hero-h, 96px); width: auto; aspect-ratio: 1 / 1; max-width: 45%; flex: 0 1 auto; }
 /* Compact on every question screen: the answer buttons must stay above the bar on small phones. */
-.hero svg { --hero-h: 72px; }
+.hero svg { --hero-h: clamp(72px, calc(100vh - 568px), 132px); }
+@supports (height: 100dvh) { .hero svg { --hero-h: clamp(72px, calc(100dvh - 568px), 132px); } }
 .hero-mobility { display: none; } /* the three answer buttons already carry the walker and wheelchair icons */
 /* Short phones (iPhone SE + browser chrome): drop the hero and the dots, the progress number stays. */
 @media (max-height: 640px) {

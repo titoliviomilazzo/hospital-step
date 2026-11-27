@@ -241,9 +241,10 @@ export function itemKind(text) {
 }
 
 // ---------------------------------------------------------------- hero illustrations
-// Flat pictograms for the question screens and the mobility buttons. Each is a square 200x200
-// drawing with its own Korean aria-label; strokes use INK, fills use SOFT or white (same tokens as
-// the pictures above). They show no text, so they add no facts.
+// 3D pictures for the question screens and the mobility buttons: 400x400 transparent WebP files in
+// img/icons/, shown inside the same 200x200 SVG frame the old flat drawings used (so every caller
+// and CSS size rule is unchanged). Each has its own Korean aria-label and shows no text, so it adds
+// no facts. Paths are relative to index.html (the app is served under a sub-path).
 
 const HERO_LABELS = {
   walker: '보행기를 쓰는 사람 그림',
@@ -256,96 +257,27 @@ const HERO_LABELS = {
 
 export const HERO_KINDS = Object.keys(HERO_LABELS);
 
-function heroFrame(inner, kind, cls) {
-  return `<svg class="${cls}" viewBox="0 0 200 200" role="img" aria-label="${escapeXml(HERO_LABELS[kind])}" `
+function svgFrame(inner, label, cls) {
+  return `<svg class="${cls}" viewBox="0 0 200 200" role="img" aria-label="${escapeXml(label)}" `
     + `xmlns="http://www.w3.org/2000/svg" focusable="false">${inner}</svg>`;
 }
 
-const head = (cx, cy, r = 16) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" ${stroke(6)}/>`;
-const line = (x1, y1, x2, y2, w = 8) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${stroke(w)}/>`;
-const poly = (pts, w = 8) => `<polyline points="${pts}" fill="none" ${stroke(w)}/>`;
-const ground = `<line x1="14" y1="192" x2="186" y2="192" ${stroke(5)}/>`;
+const iconImage = (name, extra = '') => `<image href="img/icons/${name}.webp" x="0" y="0" width="200" `
+  + `height="200" preserveAspectRatio="xMidYMid meet"${extra}/>`;
 
-function drawWalker() {
-  return ground
-    // person, leaning slightly toward the walker
-    + head(80, 40)
-    + line(82, 60, 76, 112, 12)
-    + poly('76,112 84,150 80,186', 10) + poly('76,112 64,150 56,186', 10)
-    + line(80, 186, 96, 186, 8) + line(56, 186, 42, 186, 8)
-    + poly('82,72 112,92 132,98', 9)
-    // walker frame with two wheels
-    + line(128, 98, 168, 98, 9) + line(130, 98, 130, 176, 8) + line(166, 98, 166, 176, 8)
-    + line(130, 140, 166, 140, 6)
-    + `<circle cx="130" cy="182" r="9" fill="${SOFT}" ${stroke(5)}/>`
-    + `<circle cx="166" cy="182" r="9" fill="${SOFT}" ${stroke(5)}/>`;
-}
-
-function drawWheelchair() {
-  return ground
-    + head(92, 36)
-    + line(92, 54, 88, 108, 12)
-    + poly('88,108 134,110 146,152', 10) + line(146,152, 164,152, 8)
-    + poly('92,70 116,92 126,94', 8)
-    // chair: backrest with push handle, seat, footrest rod
-    + poly('58,56 66,56 66,114', 7) + line(66, 114, 142, 114, 7) + line(142, 114, 154, 150, 6)
-    // big wheel and small front wheel
-    + `<circle cx="92" cy="146" r="40" fill="none" ${stroke(8)}/>`
-    + `<circle cx="92" cy="146" r="6" fill="${INK}"/>`
-    + `<circle cx="166" cy="180" r="11" fill="${SOFT}" ${stroke(5)}/>`;
-}
-
-function drawWalking() {
-  return ground
-    + head(100, 34)
-    + line(100, 54, 100, 112, 12)
-    + poly('100,112 120,150 118,186', 10) + line(118, 186, 134, 186, 8)
-    + poly('100,112 84,150 64,180', 10) + line(64, 180, 50, 178, 8)
-    + poly('100,68 78,92 70,112', 9) + poly('100,68 124,90 132,108', 9);
-}
-
-function drawHospital() {
-  const win = (x, y) => `<rect x="${x}" y="${y}" width="20" height="20" fill="#fff" ${stroke(4)}/>`;
-  return ground
-    + `<rect x="36" y="56" width="128" height="136" fill="${SOFT}" ${stroke(7)}/>`
-    + [60, 92, 124].flatMap((x) => [74, 112].map((y) => win(x + 0, y))).join('')
-    + `<rect x="84" y="150" width="32" height="42" fill="#fff" ${stroke(5)}/>`
-    // plus sign on the roof
-    + `<rect x="78" y="14" width="44" height="40" rx="6" fill="#fff" ${stroke(6)}/>`
-    + line(100, 20, 100, 48, 9) + line(86, 34, 114, 34, 9);
-}
-
-function drawFirstVisit() {
-  return ground
-    + head(78, 70, 20)
-    + `<path d="M40 192 C 40 128 116 128 116 192 Z" fill="${SOFT}" ${stroke(7)}/>`
-    // question bubble
-    + `<path d="M104 28 H176 Q188 28 188 40 V84 Q188 96 176 96 H138 L120 116 L124 96 H104 Q92 96 92 84 V40 Q92 28 104 28 Z" fill="#fff" ${stroke(6)}/>`
-    + `<text x="140" y="82" text-anchor="middle" font-weight="900" font-size="56" fill="${INK}">?</text>`;
-}
-
-function drawReception() {
-  return ground
-    // window frame and the staff member behind the counter
-    + `<rect x="24" y="22" width="152" height="118" rx="12" fill="#fff" ${stroke(7)}/>`
-    + head(100, 62, 18)
-    + `<path d="M62 140 C 62 96 138 96 138 140 Z" fill="${SOFT}" ${stroke(6)}/>`
-    // counter and a paper handed across
-    + `<rect x="14" y="140" width="172" height="52" rx="6" fill="${SOFT}" ${stroke(7)}/>`
-    + `<rect x="120" y="124" width="40" height="26" fill="#fff" ${stroke(5)}/>`
-    + line(128, 134, 152, 134, 4) + line(128, 142, 146, 142, 4);
-}
-
-const HERO_DRAW = {
-  walker: drawWalker, wheelchair: drawWheelchair, walking: drawWalking,
-  hospital: drawHospital, 'first-visit': drawFirstVisit, reception: drawReception,
-};
+// The first-visit picture is cropped flat at its bottom edge: fade the lowest ~18% to transparent.
+// The id is fixed on purpose: the picture is on screen at most once, and duplicates would be identical.
+const FADE_BOTTOM = '<defs><linearGradient id="fv-fade-grad" x1="0" y1="0" x2="0" y2="1">'
+  + '<stop offset="0.82" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>'
+  + '<mask id="fv-fade-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="200">'
+  + '<rect x="0" y="0" width="200" height="200" fill="url(#fv-fade-grad)"/></mask></defs>';
 
 /** Inline SVG string of one illustration. `kind` is one of HERO_KINDS; `cls` is the CSS class. */
 export function heroSvg(kind, cls = 'hero-svg') {
-  const draw = HERO_DRAW[kind];
-  if (!draw) throw new Error(`unknown hero kind: ${kind}`);
-  return heroFrame(draw(), kind, cls);
+  if (!HERO_LABELS[kind]) throw new Error(`unknown hero kind: ${kind}`);
+  const name = `hero-${kind}`;
+  const inner = kind === 'first-visit' ? FADE_BOTTOM + iconImage(name, ' mask="url(#fv-fade-mask)"') : iconImage(name);
+  return svgFrame(inner, HERO_LABELS[kind], cls);
 }
 
 export const walkerSvg = (cls) => heroSvg('walker', cls);
@@ -367,7 +299,7 @@ export const HERO_BY_STEP = {
 export const MOBILITY_ICON = { walker: 'walker', wheelchair: 'wheelchair', none: 'walking' };
 
 // ---------------------------------------------------------------- visit-notes pictures
-// Same 200x200 flat style as the hero illustrations. They carry no text of their own and the
+// Same 200x200 frame as the hero illustrations. They carry no text of their own and the
 // screens always print a text title next to them (a picture alone is never the message).
 
 const NOTE_LABELS = {
@@ -381,58 +313,10 @@ const NOTE_LABELS = {
 
 export const NOTE_KINDS = Object.keys(NOTE_LABELS);
 
-const NOTE_DRAW = {
-  // notebook with a spine and lines, a pencil lying across the corner
-  note: () => ground
-    + `<rect x="46" y="22" width="108" height="150" rx="10" fill="#fff" ${stroke(7)}/>`
-    + `<rect x="46" y="22" width="22" height="150" rx="8" fill="${SOFT}" ${stroke(7)}/>`
-    + [62, 86, 110].map((y) => line(84, y, 138, y, 6)).join('')
-    + `<polygon points="150,120 174,96 188,110 164,134" fill="#fff" ${stroke(6)}/>`
-    + `<polygon points="150,120 164,134 144,142" fill="${SOFT}" ${stroke(6)}/>`,
-  // calendar with two rings, a grid of days and one day marked
-  next: () => ground
-    + `<rect x="34" y="34" width="132" height="150" rx="12" fill="#fff" ${stroke(7)}/>`
-    + `<path d="M34 46 Q34 34 46 34 H154 Q166 34 166 46 V74 H34 Z" fill="${SOFT}" ${stroke(7)}/>`
-    + line(66, 18, 66, 48, 9) + line(134, 18, 134, 48, 9)
-    + [0, 1, 2].flatMap((r) => [0, 1, 2, 3].map((c) => (r === 1 && c === 2
-      ? `<circle cx="${58 + c * 28}" cy="${102 + r * 28}" r="13" fill="${INK}"/>`
-      : `<rect x="${50 + c * 28}" y="${94 + r * 28}" width="16" height="16" rx="3" fill="${SOFT}" ${stroke(3)}/>`))).join(''),
-  // medicine bag with a capsule in front of it
-  med: () => ground
-    + `<path d="M40 70 H118 V176 H40 Z" fill="${SOFT}" ${stroke(7)}/>`
-    + `<path d="M40 70 L48 56 L56 70 L64 56 L72 70 L80 56 L88 70 L96 56 L104 70 L112 56 L118 70" fill="#fff" ${stroke(5)}/>`
-    + `<rect x="52" y="104" width="54" height="40" rx="6" fill="#fff" ${stroke(5)}/>`
-    + line(79, 110, 79, 138, 7) + line(65, 124, 93, 124, 7)
-    + `<g transform="rotate(-35 140 120)"><rect x="104" y="100" width="72" height="40" rx="20" fill="#fff" ${stroke(7)}/>`
-    + `<path d="M140 100 H156 a20 20 0 0 1 0 40 H140 Z" fill="${SOFT}" ${stroke(7)}/>`
-    + `<line x1="140" y1="100" x2="140" y2="140" ${stroke(6)}/></g>`,
-  // two test tubes in a rack
-  test: () => ground
-    + `<path d="M62 24 H98 V138 a18 18 0 0 1 -36 0 Z" fill="#fff" ${stroke(7)}/>`
-    + `<path d="M62 100 H98 V138 a18 18 0 0 1 -36 0 Z" fill="${INK}"/>`
-    + `<path d="M112 24 H148 V138 a18 18 0 0 1 -36 0 Z" fill="#fff" ${stroke(7)}/>`
-    + `<path d="M112 80 H148 V138 a18 18 0 0 1 -36 0 Z" fill="${SOFT}" ${stroke(5)}/>`
-    + `<rect x="46" y="126" width="118" height="12" rx="4" fill="${SOFT}" ${stroke(6)}/>`
-    + `<rect x="46" y="150" width="118" height="30" rx="6" fill="${SOFT}" ${stroke(7)}/>`,
-  // paper with three check boxes and lines
-  todo: () => ground
-    + `<path d="M50 14 H128 L156 42 V184 H50 Z" fill="#fff" ${stroke(7)}/>`
-    + `<path d="M128 14 V42 H156" fill="${SOFT}" ${stroke(7)}/>`
-    + [70, 106, 142].map((y) => `<rect x="64" y="${y - 10}" width="22" height="22" rx="3" fill="#fff" ${stroke(5)}/>`
-      + poly(`67,${y + 1} 74,${y + 9} 86,${y - 12}`, 6) + line(98, y, 140, y, 6)).join(''),
-  // warning triangle with an exclamation mark
-  caution: () => ground
-    + `<path d="M100 22 L180 168 H20 Z" fill="${SOFT}" ${stroke(9)}/>`
-    + line(100, 70, 100, 118, 14)
-    + `<circle cx="100" cy="144" r="9" fill="${INK}"/>`,
-};
-
 /** Inline SVG string of a visit-notes picture. `kind` is one of NOTE_KINDS; `cls` is the CSS class. */
 export function noteSvg(kind, cls = 'note-svg') {
-  const draw = NOTE_DRAW[kind];
-  if (!draw) throw new Error(`unknown note picture: ${kind}`);
-  return `<svg class="${cls}" viewBox="0 0 200 200" role="img" aria-label="${escapeXml(NOTE_LABELS[kind])}" `
-    + `xmlns="http://www.w3.org/2000/svg" focusable="false">${draw()}</svg>`;
+  if (!NOTE_LABELS[kind]) throw new Error(`unknown note picture: ${kind}`);
+  return svgFrame(iconImage(`note-${kind}`), NOTE_LABELS[kind], cls);
 }
 
 /** Browser only: turns one of the SVG strings above into an element. */
