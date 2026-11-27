@@ -447,3 +447,19 @@ body.has-overlay-rec .overlay { padding-top: 64px; }
   .progress { font-size: 1.6rem; }
   #btn-settings { margin-left: 6px; padding: 4px 12px; min-width: 44px; }
 }
+
+/* Photos of papers (js/photo-store.js, notes-ui.js): list rows, the after-camera screen, the photo view.
+   Every button is at least 64px tall; a picture never overflows the width. */
+.notes-section { margin: 4px 0 0; font-size: 28px; font-weight: 900; }
+.notes-photos { display: flex; flex-direction: column; gap: 8px; }
+.btn.answer.notes-photo-row { min-height: 88px; align-items: center; }
+.photo-thumb { flex: 0 0 64px; width: 64px; height: 64px; object-fit: cover; border: 2px solid var(--line); border-radius: 8px; background: var(--card); }
+.photo-img { display: block; width: 100%; max-width: 100%; max-height: 50vh; object-fit: contain; border: 2px solid var(--line); border-radius: 12px; background: var(--card); }
+.photo-host { max-width: 100%; border: 2px solid var(--line); border-radius: 12px; background: var(--card); overflow: hidden; }
+.photo-svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.photo-host .zoom-bar { margin: 6px 8px 8px; }
+#notes-photo .notes-btn, #photo-delete .notes-btn, #photo-kind .notes-btn, #photo-full .notes-btn, #photo-error .notes-btn { min-height: 72px; }
+@media (max-height: 640px) {
+  .photo-img { max-height: 38vh; }
+  #notes-photo .notes-btn, #photo-saved .notes-btn { min-height: 64px; font-size: 24px; }
+}

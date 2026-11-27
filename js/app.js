@@ -540,6 +540,7 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
   });
   const notesUi = createNotesUi({
     h, svgNode, flow, say, stopSpeaking, rerender: () => render(), online: Boolean(NOTES_URL), isSim: () => settings.sim,
+    zoomBar: (getCtl, key, label) => zoomBar(getCtl, key, label), // the same [크게]/[작게] bar the maps use (photo view)
     onSpeakPoint: () => sayCurrent(),
     notesUrl: NOTES_URL,
     onBack: () => {
@@ -1197,10 +1198,10 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
   }
 
   /** [크게] [작게] [원래대로] right under the map frame (zoom.js places it): pinching is hard for many users. Never redrawn. */
-  function zoomBar(getCtl, key) {
+  function zoomBar(getCtl, key, label = '지도 크기') {
     const ctl = { zoomIn: () => getCtl().zoomIn(), zoomOut: () => getCtl().zoomOut(), reset: () => getCtl().reset() };
     const btn = (id, label, fn) => h('button', { type: 'button', class: 'btn zoom-btn', id: `zoom-${key}-${id}`, onclick: fn }, label);
-    return h('div', { class: 'zoom-bar', role: 'group', 'aria-label': '지도 크기' },
+    return h('div', { class: 'zoom-bar', role: 'group', 'aria-label': label },
       btn('in', '크게', () => ctl.zoomIn()), btn('out', '작게', () => ctl.zoomOut()), btn('reset', '원래대로', () => ctl.reset()));
   }
 
@@ -1468,13 +1469,19 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
     return box;
   }
 
+  /** I8 (get the prescription): one button photographs it; it sits after the arrow block and the keep-papers note. */
+  function rxPhotoButton(p) {
+    if (!p || p.id !== 'I8') return null;
+    return h('button', { class: 'btn wide notes-btn', id: 'btn-rx-photo', onclick: () => { notesUi.takePhoto('rx', { returnTo: 'route' }); } }, '처방전 사진 찍기');
+  }
+
   function renderPoint(p) {
     const main = h('div', { class: 'stack' });
     const arrivedHere = state.arrived && state.index === route.points.length - 1;
     // Always visible, first on the screen (never inside the collapsible details).
     // With a big arrow on screen the arrow block goes first and this note sits right below it.
     const bigArrow = !state.arrived && p.kind !== 'bus' && Boolean(arrowInfo());
-    if (p.keepPapers && !bigArrow) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT));
+    if (p.keepPapers && !bigArrow) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT), ...[rxPhotoButton(p)].filter(Boolean));
 
     // The user said yes on N0: the doctor's consent card (N1) opens from this one big button, which
     // sits first so it is above the bar without scrolling, even in simulation mode.
@@ -1513,7 +1520,7 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
       const planFirst = showsFloorMap(p);
       if (bigArrow) {
         main.append(pictureBox(p, false));
-        if (p.keepPapers) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT));
+        if (p.keepPapers) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT), ...[rxPhotoButton(p)].filter(Boolean));
         if (planFirst) main.append(floorPanel());
       } else {
         if (planFirst) main.append(floorPanel());
@@ -1573,6 +1580,9 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
   function buildAsk() {
     const card = h('div', { class: 'overlay-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': '선생님께 보여 드리는 글' });
     for (const line of ASK_DOCTOR_LINES) card.append(h('p', { class: 'help-sentence ask-line' }, line));
+    // The tap closes the card and opens the camera in the same handler (iOS needs the tap itself).
+    card.append(h('button', { class: 'btn wide notes-btn', id: 'btn-ask-photo',
+      onclick: () => { dispatch({ type: 'CLOSE_ASK' }); notesUi.takePhoto('memo', { returnTo: 'route' }); } }, '적어 주신 종이 사진 찍기'));
     card.append(h('button', { class: 'btn wide primary', id: 'btn-ask-close',
       onclick: () => { dispatch({ type: 'CLOSE_ASK' }); } }, '닫기'));
     return card;
@@ -1626,30 +1636,37 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
     wasOverlay = open;
   }
 
-  /** [진료 기록 모두 지우기] with one confirm step inside the settings card. */
+  /** [진료 기록 모두 지우기] with one confirm step inside the settings card; it clears the photos too. */
   function clearNotesControl() {
     const box = h('div', { class: 'clear-notes', id: 'clear-notes' });
+    let lastMode = ['idle', null];
     const show = (mode, msg = null) => {
+      lastMode = [mode, msg];
       const n = listRecords().length;
+      const pics = notesUi.photoCount(); // loaded below; 0 until then
+      const none = n === 0 && pics === 0;
       box.replaceChildren(...[
         mode === 'confirm'
-          ? h('p', { class: 'warn', role: 'alert' }, `진료 기록 ${n}건을 모두 지울까요? 되돌릴 수 없어요.`)
+          ? h('p', { class: 'warn', role: 'alert' }, `진료 기록 ${n}건과 사진 ${pics}장을 모두 지울까요? 되돌릴 수 없어요.`)
           : null,
         msg ? h('p', { class: 'muted', role: 'status' }, msg) : null,
         mode === 'confirm'
           ? h('div', { class: 'link-row' },
-            h('button', { class: 'btn', id: 'btn-clear-notes-yes', onclick: () => {
+            h('button', { class: 'btn', id: 'btn-clear-notes-yes', onclick: async () => {
               const cleared = clearRecords();
               flow.forget(); // no text of a visit stays in memory
+              const photosCleared = await notesUi.clearPhotos(); // the photos go with the records
               notesUi.closeViews();
-              show('idle', cleared ? '진료 기록을 모두 지웠어요.' : '지우지 못했어요. 브라우저의 저장 공간을 확인한 뒤 다시 눌러 주세요.');
+              show('idle', cleared && photosCleared ? '진료 기록과 사진을 모두 지웠어요.' : '지우지 못했어요. 브라우저의 저장 공간을 확인한 뒤 다시 눌러 주세요.');
             } }, '모두 지우기'),
             h('button', { class: 'btn', id: 'btn-clear-notes-no', onclick: () => show('idle') }, '그만두기'))
-          : h('button', { class: 'btn wide', id: 'btn-clear-notes', disabled: n === 0, onclick: () => show('confirm') },
-            n === 0 ? '진료 기록 모두 지우기 (기록 없음)' : '진료 기록 모두 지우기'),
+          : h('button', { class: 'btn wide', id: 'btn-clear-notes', disabled: none, onclick: () => show('confirm') },
+            none ? '진료 기록 모두 지우기 (기록 없음)' : '진료 기록 모두 지우기'),
       ].filter(Boolean));
     };
     show('idle');
+    // The photo count comes from the async store: load it once, then redraw the control in its current mode.
+    notesUi.refreshPhotos().then(() => show(lastMode[0], lastMode[1]));
     return box;
   }
 
@@ -1687,7 +1704,7 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
       toggle('sim', '시뮬레이션', '(모식도로 화살표를 연습해 봐요)'),
       toggle('listenNotes', '의사 말씀 받아 적기 (선택)'),
       h('p', { class: 'muted', id: 'listen-notes-note' }, '진료실에서 의사 선생님이 허락하실 때만 쓰세요. 소리는 저장하지 않아요.'),
-      h('p', { class: 'muted', id: 'privacy-note' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요. 단, 병원 문자를 붙여 넣어 정리한 기록과, 받아 적기를 켜고 선생님이 허락하신 경우의 글자 기록은 이 기기에만 남아요. 붙여넣은 글은 밖으로 보내지 않고 이 휴대폰 안에서만 정리해요. 소리는 저장하지 않아요.'),
+      h('p', { class: 'muted', id: 'privacy-note' }, '로그인이 없어요. 설정과 마지막으로 확인한 지점만 이 기기에 저장하고, 말한 내용과 방문 정보는 저장하지 않아요. 단, 병원 문자를 붙여 넣어 정리한 기록과, 받아 적기를 켜고 선생님이 허락하신 경우의 글자 기록은 이 기기에만 남아요. 붙여넣은 글은 밖으로 보내지 않고 이 휴대폰 안에서만 정리해요. 소리는 저장하지 않아요. 사진도 이 기기에만 저장해요.'),
       h('p', { class: 'muted' }, '내릴 곳 알림을 켜면 휴대폰 위치를 쓰지만, 위치는 저장하거나 보내지 않아요.'),
       h('p', { class: 'muted' }, '말하기 기능을 쓰면 휴대폰 브라우저가 음성을 인식하려고 소리를 인터넷으로 보낼 수 있어요.'),
       clearNotesControl(),
