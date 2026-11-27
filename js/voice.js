@@ -87,6 +87,8 @@ export function resetVoiceForTests() {
   speechPrimed = false;
   settleActive = null;
   generation = 0;
+  speakingListener = null;
+  speakingNow = false;
 }
 
 function haltOutput() {
@@ -104,10 +106,25 @@ function haltOutput() {
   if (settle) settle();
 }
 
+// One optional listener told when a spoken sentence starts (true) and ends, is interrupted or fails (false).
+let speakingListener = null;
+let speakingNow = false;
+export function setSpeakingListener(fn) {
+  speakingListener = typeof fn === 'function' ? fn : null;
+}
+function emitSpeaking(on) {
+  if (speakingNow === on) return;
+  speakingNow = on;
+  try {
+    if (speakingListener) speakingListener(on);
+  } catch { /* a display hook must never break speech */ }
+}
+
 /** Stops whatever is playing and invalidates every in-flight speak(). */
 export function stopSpeaking() {
   generation += 1;
   haltOutput();
+  emitSpeaking(false);
 }
 
 function getSharedAudio() {
@@ -256,20 +273,26 @@ export async function speak(clipId, text, settings, { timeoutMs = MP3_TIMEOUT_MS
   if (!settings || !settings.sound || !text) return false;
   const gen = (generation += 1);
   haltOutput();
+  emitSpeaking(false);
   const manifest = await loadManifest();
   if (gen !== generation) return false;
-  if (hasRecording(manifest, settings.voice, clipId, text)) {
-    try {
-      await playMp3(audioPath(settings.voice, clipId), settings.rate, timeoutMs);
-      return gen === generation;
-    } catch (err) {
-      if (gen !== generation || (err && err.name === 'AbortError')) return false;
-      // fall through to Web Speech, with the same (current) text
+  emitSpeaking(true);
+  try {
+    if (hasRecording(manifest, settings.voice, clipId, text)) {
+      try {
+        await playMp3(audioPath(settings.voice, clipId), settings.rate, timeoutMs);
+        return gen === generation;
+      } catch (err) {
+        if (gen !== generation || (err && err.name === 'AbortError')) return false;
+        // fall through to Web Speech, with the same (current) text
+      }
     }
+    if (gen !== generation) return false;
+    const ok = await speakWithSynthesis(text, settings.rate);
+    return ok && gen === generation;
+  } finally {
+    if (gen === generation) emitSpeaking(false); // a newer speak() or stopSpeaking() owns the state otherwise
   }
-  if (gen !== generation) return false;
-  const ok = await speakWithSynthesis(text, settings.rate);
-  return ok && gen === generation;
 }
 
 /** Runs `next()` only when `first` (a speak() promise) completed normally; returns that boolean. */

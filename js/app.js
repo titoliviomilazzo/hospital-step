@@ -5,7 +5,8 @@ import { FIELDS, FIXED_CLIPS, NOTES_SENTENCES, QUESTION_STEPS, ANSWER_BUTTONS, o
 import { helpFor } from './help.js';
 import { NOT_HEARD, appliedNotice, blockedNotice } from './notices.js';
 import { loadState, saveState } from './storage.js';
-import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking, installAudioUnlock } from './voice.js';
+import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking, installAudioUnlock, setSpeakingListener } from './voice.js';
+import { keyPlaceSpan } from './keyplace.js';
 import { createListener, isSupported as micSupported } from './listen.js';
 import { parseVisit, expandAbbreviations } from './intent.js';
 import { arrowAngle, bearingDeg, createCompassController, quantiseHeading } from './compass.js';
@@ -449,10 +450,31 @@ function watchBar() {
   if (typeof window !== 'undefined') window.addEventListener('resize', syncBarHeight);
 }
 
-/** Sets the one persistent instruction heading (inside the aria-live region) only when it changes. */
-function setInstruction(text) {
+// The speaking bars in the header line pulse while a sentence plays (html.speaking). No document in Node tests.
+if (typeof document !== 'undefined' && document.documentElement) {
+  setSpeakingListener((on) => document.documentElement.classList.toggle('speaking', on));
+}
+
+/**
+ * Sets the one persistent instruction heading (inside the aria-live region) only when it changes.
+ * With `highlight`, the destination place at the start of the sentence gets one <span class="instr-key">;
+ * the heading's textContent is the same sentence either way.
+ */
+function setInstruction(text, highlight = false) {
   const el = document.getElementById('instruction');
-  if (el && el.textContent !== text) el.textContent = text;
+  if (!el) return;
+  const mark = highlight ? '1' : '0';
+  if (el.textContent === text && (el.dataset.hl || '0') === mark) return;
+  const span = highlight ? keyPlaceSpan(text) : null;
+  if (!span) {
+    el.textContent = text;
+  } else {
+    const key = document.createElement('span');
+    key.className = 'instr-key';
+    key.textContent = span.key;
+    el.replaceChildren(document.createTextNode(span.before), key, document.createTextNode(span.after));
+  }
+  el.dataset.hl = mark;
 }
 
 let booted = false;
@@ -1747,11 +1769,12 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
     }
     $('brand').hidden = !showBrand(state, nScreen);
     if (nScreen) setInstruction(nScreen.instruction);
-    else if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display);
+    else if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display, !state.arrived);
     else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
 
     // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
     // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
+    $('instr-line').hidden = !p || Boolean(nScreen); // the decorative header line: route point screens only
     $('instruction').classList.toggle('compact', Boolean((p && p.alertCoord) || (nScreen && nScreen.compact)
       || (p && !nScreen && p.kind !== 'bus' && arrowInfo()) // the big arrow must fit above the bar
       || (p && isConsultPoint(p)) || (p && state.arrived && state.index === route.points.length - 1))); // I4 / arrival: the room / show-the-doctor buttons must stay above the bar
