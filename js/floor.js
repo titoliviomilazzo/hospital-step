@@ -107,6 +107,28 @@ export function facilityByNo(floor, no) {
   return (floor.facilities || []).find((f) => f.no === no) || null;
 }
 
+/** The mark with this id (entrance, info, escalator, elevator ...), or null. */
+export function markById(floor, id) {
+  return (floor.marks || []).find((m) => m.id === id) || null;
+}
+
+/**
+ * The place an indoor point refers to: its facility number, else its `mark` id, else null. A mark is
+ * used by points that lead to a spot without a facility number (the elevator to the 2nd floor, the
+ * information desk).
+ */
+export function placeOf(point) {
+  if (!point) return null;
+  if (Number.isInteger(point.facility)) return point.facility;
+  return typeof point.mark === 'string' && point.mark.trim() !== '' ? point.mark : null;
+}
+
+/** The floor's data for a place: a facility (number) or a mark (id); null when it is not on this floor. */
+function placeData(floor, ref) {
+  if (typeof ref === 'number') return facilityByNo(floor, ref);
+  return typeof ref === 'string' ? markById(floor, ref) : null;
+}
+
 /** Short plain name for screens: the label when there is one, else the official name. */
 export function facilityLabel(facility) {
   return facility.label || facility.name;
@@ -269,17 +291,17 @@ export function floorGeometry(floor, headingDeg = null) {
 }
 
 /**
- * Which facility is "now" and which is "next" at route index `index`, as numbers or FLOOR_ENTRANCE.
- * Now is the point's own facility, or the entrance mark when it has none. Next is the next point's
- * facility when that point is indoor and has one; the entrance mark when the next point leaves the
- * building; otherwise null.
+ * Which place is "now" and which is "next" at route index `index`: a facility number, a mark id or
+ * FLOOR_ENTRANCE. Now is the point's own facility or mark, or the entrance mark when it has none. Next is
+ * the next point's facility or mark when that point is indoor and has one; the entrance mark when the next
+ * point leaves the building; otherwise null.
  */
 export function floorFocus(route, index) {
   const p = route.points[index];
   const q = route.points[index + 1];
-  const current = p && Number.isInteger(p.facility) ? p.facility : FLOOR_ENTRANCE;
+  const current = placeOf(p) ?? FLOOR_ENTRANCE;
   let next = null;
-  if (q && q.stage === 'indoor' && Number.isInteger(q.facility)) next = q.facility;
+  if (q && q.stage === 'indoor' && placeOf(q) !== null) next = placeOf(q);
   else if (q && p && p.stage === 'indoor' && q.stage === 'return') next = FLOOR_ENTRANCE;
   return { current, next };
 }
@@ -292,10 +314,11 @@ const onThisFloor = (p, floor) => Boolean(p && p.stage === 'indoor' && p.floor =
 /**
  * Compass bearing (degrees clockwise from north, [0, 360)) of the straight line on the floor picture
  * from where the user stands to where the point at `index` is, or null when no honest arrow exists.
- * Destination: the facility of an indoor point of this floor; or, for the first point after an indoor
- * point (the way out), the entrance mark. Origin: the facility of the previous point, or the entrance
- * mark when the previous point has no facility or is not an indoor point of this floor. Null when a
- * facility or mark is missing from the floor data, or origin and destination are the same place.
+ * Destination: the place (facility or mark, see placeOf) of an indoor point of this floor; or, for the
+ * first point after an indoor point (the way out), the entrance mark. Origin: the place of the previous
+ * point, or the entrance mark when the previous point has no place or is not an indoor point of this
+ * floor. Null when a facility or mark is missing from the floor data, or origin and destination are the
+ * same place.
  * Pure. Picture units (x% * width / 100, y% * height / 100) keep the true proportions; y grows downward.
  */
 export function indoorBearing(route, floor, index) {
@@ -303,16 +326,16 @@ export function indoorBearing(route, floor, index) {
   if (!p || !floor) return null;
   const prev = route.points[index - 1] || null;
   const entrance = (floor.marks || []).find((m) => m.id === FLOOR_ENTRANCE) || null;
-  const prevFacility = onThisFloor(prev, floor) && Number.isInteger(prev.facility);
+  const prevPlace = onThisFloor(prev, floor) ? placeOf(prev) : null;
   let origin;
   let dest;
   if (onThisFloor(p, floor)) {
-    if (!Number.isInteger(p.facility)) return null;
-    dest = facilityByNo(floor, p.facility);
-    origin = prevFacility ? facilityByNo(floor, prev.facility) : entrance;
-  } else if (p.stage === 'return' && prevFacility) {
+    if (placeOf(p) === null) return null;
+    dest = placeData(floor, placeOf(p));
+    origin = prevPlace !== null ? placeData(floor, prevPlace) : entrance;
+  } else if (p.stage === 'return' && prevPlace !== null) {
     dest = entrance;
-    origin = facilityByNo(floor, prev.facility);
+    origin = placeData(floor, prevPlace);
   } else {
     return null;
   }
@@ -345,9 +368,26 @@ export function routeFacilityNumbers(route) {
   return out;
 }
 
-/** "원무 수납 (층별 안내 7번)", or the entrance wording; null when the number is unknown. */
+/** Mark ids (elevator, info ...) that route points refer to instead of a facility number, without repeats. */
+export function routeMarkIds(route) {
+  const out = [];
+  for (const p of (route && route.points) || []) {
+    const id = placeOf(p);
+    if (typeof id === 'string' && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * "원무 수납 (층별 안내 7번)", the entrance wording, or a mark's own name ("엘리베이터"); null when the
+ * number or mark is unknown.
+ */
 function placeText(floor, ref, isNext = false) {
   if (ref === FLOOR_ENTRANCE) return isNext ? FLOOR_ENTRANCE_NAME : FLOOR_AT_ENTRANCE;
+  if (typeof ref === 'string') {
+    const m = markById(floor, ref);
+    return m ? m.name : null;
+  }
   const f = typeof ref === 'number' ? facilityByNo(floor, ref) : null;
   return f ? `${facilityLabel(f)} (층별 안내 ${f.no}번)` : null;
 }
@@ -554,6 +594,7 @@ export function renderFloorMap(floor, currentNo, nextNo, route = null, options =
   const refs = [];
   const add = (ref) => { if (ref !== null && !refs.includes(ref)) refs.push(ref); };
   routeFacilityNumbers(route).forEach(add);
+  routeMarkIds(route).forEach(add);
   add(cur);
   add(nxt);
   add(FLOOR_ENTRANCE);
@@ -564,8 +605,8 @@ export function renderFloorMap(floor, currentNo, nextNo, route = null, options =
   for (const ref of refs) {
     let name;
     let src;
-    if (ref === FLOOR_ENTRANCE || ref === FLOOR_INFO) {
-      src = markOf(ref);
+    if (typeof ref === 'string') {
+      src = markOf(ref); // entrance, info, elevator, escalator: named by the mark itself
       name = src ? src.name : null;
     } else {
       src = typeof ref === 'number' ? facilityByNo(floor, ref) : null;

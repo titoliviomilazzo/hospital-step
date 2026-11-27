@@ -117,7 +117,7 @@ export function pictoSpec(point) {
     const consult = find(/(진료실)/);
     if (consult) return { kind: 'consult', label: consult };
     // Reception and other desks keep the sign picture, with a place name from the sentence.
-    return { kind: 'sign', label: find(/(간호사 스테이션)/) };
+    return { kind: 'sign', label: find(/(간호사 스테이션)/) || find(/^(\S+)에서 접수/) };
   }
   return { kind: 'generic', label: null };
 }

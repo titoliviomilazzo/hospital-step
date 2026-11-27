@@ -1,15 +1,17 @@
-// Turns a spoken or typed sentence into the four visit fields. Rules run locally; an optional
+// Turns a spoken or typed sentence into the five visit fields. Rules run locally; an optional
 // webhook (an AI scenario) is tried first and validated strictly against the contract. The model
 // never supplies route or eligibility text. Pure logic, importable in Node.
 //
-// Contract reply: { hospital, visit, mobility, reception, reAsk } (all five keys required; the model's reAsk text is ignored). `hospital` may be "snubh" or
-// the label in clips.js; it is normalised to the clips.js value so SET_FIELD accepts it.
+// Contract reply: { hospital, visit, mobility, reception, reAsk } (the four field keys are required; the model's reAsk text is ignored). `hospital` may be "snubh" or
+// the label in clips.js; it is normalised to the clips.js value so SET_FIELD accepts it. `dept` (the
+// department) is optional in a reply: a known value is kept, anything else is ignored. The department is
+// also read by the local rules, so the webhook contract did not have to change.
 import { optionFor, ANSWER_BUTTONS } from './clips.js';
 
 export const HOSPITAL_VALUE = '분당서울대병원';
 export const HOSPITAL_REASK = '어느 병원에 가세요? 지금은 분당서울대병원 가는 길만 안내해 드릴 수 있어요.';
 export const MAX_BODY_BYTES = 4096;
-const EMPTY = () => ({ hospital: null, visit: null, mobility: null, reception: null });
+const EMPTY = () => ({ hospital: null, dept: null, visit: null, mobility: null, reception: null });
 
 /** Maps a model-provided hospital string to the clips.js value, or null when unknown. */
 export function normalizeHospital(v) {
@@ -127,6 +129,39 @@ function receptionClause(c) {
   return undefined;
 }
 
+// ---- department -------------------------------------------------------------------------------
+// Keyword rules per department. A word that is part of a longer word does not count ("안내과" is not 내과;
+// 안과 must not start inside another Hangul word). A clause that names a department and says no to it
+// ("안과는 아니고", "내과 안 가요") makes the answer unknown; two different departments in one sentence
+// are ambiguous, so the answer is null as well.
+const DEPT_RULES = [
+  ['geriatric', /노인\s*의료|노인\s*센터|노인과/],
+  ['joint', /관절/],
+  ['spine', /척추|허리/],
+  ['eye', /(?<![가-힣])안과|(?<![가-힣])눈(?:이|을)?\s*(?:아프|아파|안\s*좋|침침|나빠|나쁘|불편|검사|수술|진료)/],
+  ['internal', /(?<![가-힣])내과|종합내과/],
+  ['heart', /심장/],
+  ['rehab', /재활/],
+  ['lung', /폐센터|흉부|(?<![가-힣])폐(?:렴|암|결핵|가|를|는|\s|$)/],
+];
+const DEPT_NEG = /아니|아닌|말고|않|안\s*가|안\s*갈|안\s*갑/;
+// On the department question itself a bare "노인" ("노인 쪽이요") is a clear answer; elsewhere it is not
+// ("노인가구" is about who lives with the user).
+const DEPT_LOOSE = [['geriatric', /노인/]];
+
+function deptClause(c, loose) {
+  const found = new Set();
+  for (const [value, re] of [...DEPT_RULES, ...(loose ? DEPT_LOOSE : [])]) if (re.test(c)) found.add(value);
+  if (found.size === 0) return undefined;
+  if (DEPT_NEG.test(c)) return UNKNOWN;
+  return found.size === 1 ? [...found][0] : UNKNOWN;
+}
+
+/** Department value named in the text, or null (none, ambiguous or refused). `loose` is for the department question. */
+export function rulesDept(text, loose = false) {
+  return mergeClauses(splitClauses(text).map((c) => deptClause(c, loose)));
+}
+
 // ---- answers to the question on screen ------------------------------------------------------
 // A short reply such as "네", "아니요" or a button's own words only means something on the screen it
 // answers, so the keyword rules (which know no screen) cannot read it. These patterns apply to the
@@ -138,6 +173,9 @@ const NEED_NONE = '(?:필요없어요|필요없습니다|필요없음|도움(?:�
 const whole = (body) => new RegExp(`^${body}$`);
 const STEP_PATTERNS = {
   hospital: [],
+  dept: [
+    [whole('(?:(?:다른진료과|다른과|다른곳|딴곳)(?:이에요|예요|이요|요|입니다)?|잘모르겠어요|모르겠어요|몰라요)'), 'other'],
+  ],
   visit: [
     [whole(YES), 'first'],
     [whole(NO), 'return'],
@@ -182,14 +220,15 @@ function withStepAnswer(fields, text, step) {
 }
 
 /**
- * Keyword rules. Returns the four fields plus `reAsk` (a question when the hospital is missing).
- * `step` is the question on screen (hospital, visit, mobility, reception) or null.
+ * Keyword rules. Returns the five fields plus `reAsk` (a question when the hospital is missing).
+ * `step` is the question on screen (hospital, dept, visit, mobility, reception) or null.
  */
 export function parseByRules(text, step = null) {
   const t = typeof text === 'string' ? text : '';
   const clauses = splitClauses(t);
   const fields = withStepAnswer({
     hospital: rulesHospital(t),
+    dept: rulesDept(t, step === 'dept'),
     visit: mergeClauses(clauses.map(visitClause)),
     mobility: mergeMobility(clauses.map(mobilityClause)),
     reception: mergeClauses(clauses.map(receptionClause)),
@@ -215,6 +254,9 @@ export function validateAiReply(obj) {
   }
   if (obj.reAsk !== undefined && obj.reAsk !== null && typeof obj.reAsk !== 'string') return null;
   const out = EMPTY();
+  // The department is optional and never makes a reply invalid: an unknown value is just ignored.
+  const dept = asNull(obj.dept);
+  if (typeof dept === 'string' && optionFor('dept', dept)) out.dept = dept;
   const hospital = asNull(obj.hospital);
   if (hospital !== null) {
     out.hospital = normalizeHospital(hospital);
@@ -243,6 +285,8 @@ function withTimeout(promise, ms, onTimeout) {
  * fall back to the rules.
  */
 export async function parseVisit(text, { webhookUrl = '', fetch: fetchImpl = globalThis.fetch, timeoutMs = 6000, step = null } = {}) {
+  // The department question is answered by the local rules only: the webhook contract has no department.
+  if (step === 'dept') webhookUrl = '';
   const viaRules = () => {
     const { reAsk, ...fields } = parseByRules(text, step);
     return { fields, reAsk, source: 'rules' };
@@ -267,7 +311,8 @@ export async function parseVisit(text, { webhookUrl = '', fetch: fetchImpl = glo
     const checked = validateAiReply(body);
     if (!checked) return viaRules();
     const { reAsk, ...fields } = checked;
-    const withStep = withStepAnswer(fields, text, step);
+    // The reply may omit the department; the local rules fill it in (never over a value the reply gave).
+    const withStep = withStepAnswer({ ...fields, dept: fields.dept ?? rulesDept(text) }, text, step);
     return { fields: withStep, reAsk: withStep.hospital ? null : reAsk, source: 'ai' };
   } catch {
     return viaRules();

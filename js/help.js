@@ -4,11 +4,13 @@
 import {
   HELP_SENTENCE, HELP_RETURN_SENTENCE, HELP_UNKNOWN_SENTENCE, shortStopName,
 } from './clips.js';
-import { facilityByNo, facilityLabel } from './floor.js';
+import { facilityByNo, facilityLabel, markById } from './floor.js';
 import { withObject, digitsToHangul } from './korean.js';
 
 const FIND_TAIL = '가는 길을 알려주세요.';
 const GENERIC_PLACE = '안내에 나온 곳';
+// The plan names the desk just "안내"; said to a passer-by it needs the floor.
+const MARK_PLACE = { info: '1층 안내' };
 
 /** Plain place name of a stop or entrance: no parenthetical, " 정류장" never doubled. */
 function placeName(name) {
@@ -27,6 +29,11 @@ export function helpPlace(route, index, floor = null) {
     if (Number.isInteger(p.facility) && floor) {
       const f = facilityByNo(floor, p.facility);
       if (f) return facilityLabel(f);
+    }
+    // A point that leads to a mark (elevator, information desk) is named by the mark, not by the entrance desk.
+    if (typeof p.mark === 'string' && !Number.isInteger(p.facility)) {
+      const m = floor ? markById(floor, p.mark) : null;
+      return m ? (MARK_PLACE[m.id] || m.name) : null;
     }
     return Number.isInteger(p.facility) ? null : '처음 오신 창구';
   }
@@ -68,13 +75,16 @@ export function helpFor(state, route, floor = null) {
     return { clipId: 'help-unknown', sentence: HELP_UNKNOWN_SENTENCE, speech: digitsToHangul(HELP_UNKNOWN_SENTENCE) };
   }
   const sentence = helpSentenceForPoint(route, state.index, floor);
-  return { clipId: `help-${route.points[state.index].id}`, sentence, speech: digitsToHangul(sentence) };
+  return { clipId: helpClipOf(route.points[state.index]), sentence, speech: digitsToHangul(sentence) };
 }
+
+/** Clip id of a point's help sentence: its own (set for a department variant) or help-<id>. */
+export const helpClipOf = (p) => p.helpClipId || `help-${p.id}`;
 
 /** `{clipId, text}` rows of the per-point help clips (spoken form), for the voice script. */
 export function helpRows(route, floor = null) {
   return route.points.map((p, i) => ({
-    clipId: `help-${p.id}`,
+    clipId: helpClipOf(p),
     text: digitsToHangul(helpSentenceForPoint(route, i, floor)),
   }));
 }

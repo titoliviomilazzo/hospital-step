@@ -52,6 +52,7 @@ export function validateRoute(obj) {
     }
     if (p.floor !== undefined && !isNonEmptyString(p.floor)) errors.push(`${tag}.floor must be a non-empty string`);
     if (p.facility !== undefined && p.floor === undefined) errors.push(`${tag}: facility needs a floor`);
+    if (p.mark !== undefined && !isNonEmptyString(p.mark)) errors.push(`${tag}.mark must be a non-empty string`);
     if (p.help !== undefined && !isNonEmptyString(p.help)) errors.push(`${tag}.help must be a non-empty string`);
     if (p.wait !== undefined && typeof p.wait !== 'boolean') errors.push(`${tag}.wait must be a boolean`);
     if (p.order !== i + 1) errors.push(`${tag}.order must be ${i + 1}`);
@@ -126,4 +127,112 @@ export async function loadRoute(url, fetchImpl = globalThis.fetch) {
   const errors = validateRoute(obj);
   if (errors.length) throw new Error(`invalid route: ${errors.join('; ')}`);
   return obj;
+}
+
+// ---------------------------------------------------------------- department choice
+// The visit wizard asks which department the user goes to. The answer changes route points I3 (where to
+// register) and I4 (waiting) through applyDept(); the route file itself is never edited. This table is the
+// one place that knows the departments: `value` is the answer id, `label` the button and confirm-screen
+// wording, `name` the short form used inside spoken sentences. `facility` is the number on the 1F plan
+// (data/floor.snubh-1dong-1f.json, checked by tests/dept.test.mjs); `floorName` is that plan's own label.
+// A department without a facility on this plan lists the plan marks it may point to in `marks`.
+export const DEPARTMENTS = Object.freeze([
+  { value: 'geriatric', label: '노인의료센터', name: '노인의료센터', facility: 9, floorName: '노인의료센터' },
+  { value: 'joint', label: '관절센터', name: '관절센터', facility: 6, floorName: '관절센터' },
+  { value: 'spine', label: '척추센터', name: '척추센터', facility: 5, floorName: '척추센터' },
+  // 안과 is on 1동 2층 (no. 15 of the hospital's 2F guide); the app has no 2F plan, so it points to the
+  // elevator (walker, wheelchair) or the escalator on the 1F plan.
+  { value: 'eye', label: '안과', name: '안과', marks: ['elevator', 'escalator'], upstairs: '1동 2층 15번 안과' },
+  { value: 'internal', label: '내과', name: '내과', facility: 11, floorName: '내과' },
+  { value: 'heart', label: '심장혈관센터', name: '심장혈관센터', facility: 4, floorName: '심장혈관센터' },
+  { value: 'rehab', label: '재활의학과', name: '재활의학과', facility: 10, floorName: '재활의학과' },
+  { value: 'lung', label: '폐센터(흉부외과)', name: '폐센터', facility: 8, floorName: '폐센터 흉부외과' },
+  // Unknown department: the information desk on the 1F plan.
+  { value: 'other', label: '다른 진료과', name: '다른 진료과', marks: ['info'] },
+]);
+
+export const DEFAULT_DEPT = 'geriatric'; // what the route was written for; also the meaning of "no answer"
+const LIFT_MOBILITY = Object.freeze(['walker', 'wheelchair']); // these users are sent to the elevator
+
+export const deptByValue = (value) => DEPARTMENTS.find((d) => d.value === value) || null;
+
+const NEAR_STAFF_DETAIL = '순서가 되면 이름을 불러요. 잘 모르시겠으면 가까운 직원에게 물어보세요.';
+const WAIT_HELP_TAIL = '진료를 기다리고 있어요. 어디서 기다리면 되는지 알려주세요.';
+const EYE_UPSTAIRS = '안과는 2층에 있어요.';
+export const DEPT_OTHER_SENTENCE = '1층 안내에서 진료과가 어디인지 물어보세요.';
+export const DEPT_EYE_LIFT_SENTENCE = `${EYE_UPSTAIRS} 엘리베이터를 타고 2층으로 가서 안과 표지판을 찾으세요.`;
+export const DEPT_EYE_STAIRS_SENTENCE = `${EYE_UPSTAIRS} 에스컬레이터나 엘리베이터를 타고 2층으로 가서 안과 표지판을 찾으세요.`;
+export const deptRegisterSentence = (d) => `${d.name}에서 접수하세요.`;
+export const deptWaitHelp = (d) => (d.value === 'other' ? WAIT_HELP_TAIL : `${d.name}에서 ${WAIT_HELP_TAIL}`);
+
+/**
+ * A copy of `route` for the chosen department; the input is never changed. `dept` null, unknown or the
+ * default (노인의료센터) leaves every text as it is (so the existing recordings still match). Otherwise
+ * points I3 and I4 get the department's sentences and place (`facility` or `mark`). `mobility`
+ * (walker, wheelchair, none, null) only matters for 안과: the lift for walker and wheelchair, otherwise
+ * the escalator or the lift.
+ *
+ * Changed points also get clip ids, because the sentence is no longer the one the recording of the
+ * point id holds: `clipId` (spoken sentence), `detailClipId` and `helpClipId`. Where an id is set,
+ * the app plays and the voice script records the sentence under it.
+ */
+export function applyDept(route, dept, mobility = null) {
+  const copy = { ...route, points: route.points.map((p) => ({ ...p })) };
+  const d = deptByValue(dept);
+  if (!d || d.value === DEFAULT_DEPT) return copy;
+  const i3 = copy.points.find((p) => p.id === 'I3');
+  const i4 = copy.points.find((p) => p.id === 'I4');
+  const lift = d.value === 'eye' && LIFT_MOBILITY.includes(mobility);
+  const variant = `${d.value}${lift ? '-lift' : ''}`;
+  let place; // {facility} or {mark}
+  let sentence;
+  let sourceTail;
+  if (d.facility) {
+    place = { facility: d.facility };
+    sentence = deptRegisterSentence(d);
+    sourceTail = `층별안내 1동 1층 ${d.facility}번 ${d.floorName}`;
+  } else if (d.value === 'eye') {
+    place = { mark: lift ? 'elevator' : 'escalator' };
+    sentence = lift ? DEPT_EYE_LIFT_SENTENCE : DEPT_EYE_STAIRS_SENTENCE;
+    sourceTail = `층별안내 ${d.upstairs}`;
+  } else {
+    place = { mark: d.marks[0] };
+    sentence = DEPT_OTHER_SENTENCE;
+    sourceTail = '층별안내 1동 1층 안내';
+  }
+  const retarget = (p) => {
+    delete p.facility;
+    delete p.mark;
+    Object.assign(p, place);
+    p.source = String(p.source).replace(/층별안내 .*$/, sourceTail);
+  };
+  if (i3) {
+    retarget(i3);
+    i3.display = sentence;
+    i3.speech = sentence;
+    i3.clipId = `I3-dept-${variant}`;
+    i3.helpClipId = `help-I3-dept-${variant}`;
+  }
+  if (i4) {
+    retarget(i4);
+    i4.help = deptWaitHelp(d);
+    i4.helpClipId = `help-I4-dept-${d.value}`; // the sentence does not depend on the lift
+    if (typeof i4.detail === 'string' && i4.detail.trim() !== '') {
+      i4.detail = NEAR_STAFF_DETAIL;
+      i4.detailSpeech = null;
+      i4.detailClipId = 'I4-dept-detail';
+    }
+  }
+  return copy;
+}
+
+/** Every distinct {dept, mobility} the route can be recomputed for, besides the default department. */
+export function deptVariants() {
+  const out = [];
+  for (const d of DEPARTMENTS) {
+    if (d.value === DEFAULT_DEPT) continue;
+    out.push({ dept: d.value, mobility: null });
+    if (d.value === 'eye') out.push({ dept: d.value, mobility: 'walker' });
+  }
+  return out;
 }

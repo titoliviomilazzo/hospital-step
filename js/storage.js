@@ -1,5 +1,5 @@
-// localStorage wrapper. Stores ONLY {settings, lastPointId}. The utterance and the four visit
-// fields are never persisted (design section 1). Every access is guarded so Node and private
+// localStorage wrapper. Stores ONLY {settings, lastPointId}. The utterance and the visit
+// fields (hospital, department, first visit, mobility, reception help) are never persisted (design section 1). Every access is guarded so Node and private
 // browsing both work.
 
 export const STORAGE_KEY = 'hospital-step.v2'; // v2: the route grew to 17 points, so v1 "resume" records would point at the wrong place

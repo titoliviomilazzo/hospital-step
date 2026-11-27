@@ -5,6 +5,7 @@
 
 import { routeStops, earlyText } from './alight.js';
 import { digitsToHangul } from './korean.js';
+import { DEPARTMENTS } from './route.js';
 
 // Help card sentences. The spoken form is the shown sentence with digits written as Hangul numerals
 // (so TTS reads 일동 일층), so what is heard is exactly what is shown. help.js picks the variant.
@@ -23,7 +24,7 @@ export const NOT_HEARD_SENTENCE = '잘 알아듣지 못했어요.';
 // The finish screen's sentence and the arrive-main clip are the same words.
 export const ARRIVED_SENTENCE = '미금역에 도착했어요. 안내를 모두 마쳤습니다. 수고 많으셨어요.';
 
-/** The four visit fields in screen order. `value` matches the AI contract in the design. */
+/** The five visit fields in screen order. `value` matches the AI contract in the design. */
 export const FIELDS = [
   {
     id: 'hospital', label: '병원',
@@ -31,6 +32,13 @@ export const FIELDS = [
       { value: '분당서울대병원', label: '분당서울대병원', clipId: 'field-hospital-snubh',
         phrase: '분당서울대병원에 가시는군요.' },
     ],
+  },
+  {
+    // Departments come from the one table in route.js (applyDept uses the same rows).
+    id: 'dept', label: '진료과',
+    options: DEPARTMENTS.map((d) => ({
+      value: d.value, label: d.label, clipId: `field-dept-${d.value}`, phrase: `${d.name}에 가시는군요.`,
+    })),
   },
   {
     id: 'visit', label: '방문',
@@ -76,6 +84,7 @@ export const FIXED_CLIPS = [
   { clipId: 'ui-resume', text: '지난번에 멈춘 곳부터 이어서 안내해 드릴게요.' },
   // Large-screen easy mode: one clip per question screen and per action screen.
   { clipId: 'q-hospital', text: '어느 병원에 가세요?' },
+  { clipId: 'q-dept', text: '어느 진료과에 가세요?' },
   { clipId: 'q-visit', text: '처음 가세요?' },
   { clipId: 'q-mobility', text: '보행기나 휠체어를 쓰세요?' },
   { clipId: 'q-reception', text: '접수할 때 도움이 필요하세요?' },
@@ -148,6 +157,7 @@ export function alertSentences(point) {
 /** Wording and leading symbol of each answer button on the question screens, by field and value. */
 export const ANSWER_BUTTONS = {
   hospital: { '분당서울대병원': { sym: '→', label: '분당서울대병원' } },
+  dept: Object.fromEntries(DEPARTMENTS.map((d) => [d.value, { sym: '→', label: d.label }])),
   visit: {
     first: { sym: '○', label: '네, 처음이에요' },
     return: { sym: '×', label: '아니요, 가 봤어요' },

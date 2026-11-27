@@ -1,6 +1,6 @@
 // State machine and rendering. `nextState` is pure and importable in Node; the DOM boot at the
 // bottom runs only in a browser. Later stages hook in at the EXTENSION POINT comments.
-import { loadRoute, OUTDOOR_STAGES } from './route.js';
+import { loadRoute, applyDept, OUTDOOR_STAGES } from './route.js';
 import { FIELDS, FIXED_CLIPS, NOTES_SENTENCES, QUESTION_STEPS, ANSWER_BUTTONS, optionFor, HELP_UNKNOWN_SENTENCE, HELP_UNKNOWN_SPEECH, REASK_HOSPITAL_SPEECH, ARRIVED_SENTENCE, alertSentences } from './clips.js';
 import { helpFor } from './help.js';
 import { NOT_HEARD, appliedNotice, blockedNotice } from './notices.js';
@@ -35,7 +35,7 @@ export const STAGE_LABEL = {
 const CLIP_TEXT = Object.fromEntries(FIXED_CLIPS.map((c) => [c.clipId, c.text]));
 const SIGN_FALLBACK = '표지판을 따라가세요. 어려우면 직원에게 물어보세요.';
 const STEP_CLIP = {
-  hospital: 'q-hospital', visit: 'q-visit', mobility: 'q-mobility', reception: 'q-reception',
+  hospital: 'q-hospital', dept: 'q-dept', visit: 'q-visit', mobility: 'q-mobility', reception: 'q-reception',
   confirm: 'confirm-all', checklist: 'checklist-screen',
 };
 // On-screen sentence of the two wizard screens whose spoken clip is too long for three lines of 36px.
@@ -118,8 +118,8 @@ const ALERT_VIBRATION = [400, 200, 400];
 const FALLBACK_ITEMS = ['신분증', '진료의뢰서'];
 // Screen 1 is a wizard: one question per screen, then confirm, then the checklist.
 export const WIZARD_STEPS = [...QUESTION_STEPS, 'confirm', 'checklist'];
-const BLANK_FIELDS = { hospital: null, visit: null, mobility: null, reception: null };
-const BLANK_MANUAL = { hospital: false, visit: false, mobility: false, reception: false };
+const BLANK_FIELDS = Object.fromEntries(FIELD_IDS.map((id) => [id, null]));
+const BLANK_MANUAL = Object.fromEntries(FIELD_IDS.map((id) => [id, false]));
 
 /** First question (in order, optionally only after `after`) whose field is still empty, or null. */
 function firstUnfilled(fields, after = null) {
@@ -157,8 +157,8 @@ export function screenOf(state, route) {
 }
 
 /**
- * Header progress: "cur / total", counted inside the current stage. On the wizard the four
- * questions count; on the route it is the position among the points of the same stage.
+ * Header progress: "cur / total", counted inside the current stage. On the wizard the
+ * questions count (one per FIELDS entry); on the route it is the position among the points of the same stage.
  */
 export function progressOf(state, route) {
   if (state.index >= 0) {
@@ -459,10 +459,15 @@ let booted = false;
 
 // ---------------------------------------------------------------- app
 
-function boot(route, support, floor = null, area = null, sample = null, sampleMessage = null) {
+function boot(baseRoute, support, floor = null, area = null, sample = null, sampleMessage = null) {
   booted = true;
   const $ = (id) => document.getElementById(id);
-  const stored = loadState(route.points.map((p) => p.id));
+  // `baseRoute` is the route file as loaded. `route` is what every screen, arrow, voice and help card
+  // uses: the base route with the chosen department applied (points I3 and I4). It is recomputed in
+  // dispatch() whenever the department or the mobility answer changes. No department means 노인의료센터,
+  // for which applyDept leaves every text as it is.
+  let route = applyDept(baseRoute, null, null);
+  const stored = loadState(baseRoute.points.map((p) => p.id));
   let settings = stored.settings;
   let state = initialState(stored.lastPointId);
   let wasOverlay = false;
@@ -573,6 +578,9 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
   function dispatch(action, { keepHeard = false } = {}) {
     const prev = state;
     state = nextState(state, action, route);
+    if (state.fields.dept !== prev.fields.dept || state.fields.mobility !== prev.fields.mobility) {
+      route = applyDept(baseRoute, state.fields.dept, state.fields.mobility);
+    }
     if (action.type === 'RESTART') { flow.reset(); notesUi.reset(); } // a new visit asks N0 afresh
     // The watch belongs to one screen: leaving it (confirm, back, reset) ends it.
     if (alightPointId !== null && (currentPoint() === null || currentPoint().id !== alightPointId || state.arrived)) stopAlight();
@@ -773,7 +781,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     if (!p) return sayStep();
     // The finish screen has no "show this to staff" step any more, so only the closing clip plays.
     if (state.arrived) return say('arrive-main', CLIP_TEXT['arrive-main']);
-    return say(p.id, p.speech);
+    return say(p.clipId || p.id, p.speech); // a department variant has its own clip id (see applyDept)
   }
 
   /** Says a re-ask: the sentence in front (when there is one), then the question, as shown. */
@@ -969,7 +977,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     if (p.detail) {
       d.append(
         h('p', {}, p.detail),
-        h('button', { class: 'btn small', onclick: () => say(`${p.id}-detail`, p.detailSpeech || p.detail) }, '설명 듣기'),
+        h('button', { class: 'btn small', onclick: () => say(p.detailClipId || `${p.id}-detail`, p.detailSpeech || p.detail) }, '설명 듣기'),
       );
     }
     d.append(row('상태', p.checkedOn ? `${p.status} (${p.checkedOn})` : p.status), row('출처', p.source));
@@ -1944,7 +1952,7 @@ async function start() {
   } catch {
     sampleMessage = null;
   }
-  boot(route, support, floor, area, sample, sampleMessage);
+  boot(route, support, floor, area, sample, sampleMessage); // `route` here is the file as loaded (boot applies the department)
 }
 
 /** Offline support: a service worker (sw.js) lets a reload open the app with no signal. Browser only, https or localhost. */
