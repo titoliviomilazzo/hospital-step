@@ -1,5 +1,5 @@
 // Pictograms as inline SVG strings. Pure and importable in Node; the app inserts a string with
-// svgNode() in the browser. No external files and no emoji: every picture is drawn here.
+// svgNode() in the browser. The flat pictures are drawn here; the 3D ones are <image> tags pointing at img/icons/. No emoji.
 // Label text is always taken from the point's own data (`display`, `sign`, `busNumber`); this
 // module never adds a fact such as a direction, distance or floor.
 
@@ -122,46 +122,24 @@ export function pictoSpec(point) {
   return { kind: 'generic', label: null };
 }
 
-// Indoor pictures: simple flat icons in the 300x280 picture frame, drawn in the top 150 units
-// (the label goes below, like the exit and building pictures). They show no text of their own.
-const WHITE_LINE = (w) => `stroke="#fff" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
-const INDOOR_ICON = {
-  // stethoscope: two ear tips, a tube and the round chest piece
-  consult: () => `<path d="M104 28 V68 Q104 104 150 104 Q196 104 196 68 V28" fill="none" ${stroke(8)}/>`
-    + `<circle cx="104" cy="26" r="7" fill="${INK}"/><circle cx="196" cy="26" r="7" fill="${INK}"/>`
-    + `<line x1="150" y1="104" x2="150" y2="116" ${stroke(8)}/>`
-    + `<circle cx="150" cy="128" r="14" fill="${SOFT}" ${stroke(6)}/>`,
-  // counter with a card lying on it
-  pay: () => `<rect x="104" y="22" width="92" height="62" rx="9" fill="#fff" ${stroke(6)}/>`
-    + `<line x1="104" y1="42" x2="196" y2="42" ${stroke(6)}/>`
-    + `<line x1="116" y1="64" x2="150" y2="64" ${stroke(5)}/>`
-    + `<rect x="60" y="88" width="180" height="52" rx="8" fill="${SOFT}" ${stroke(7)}/>`,
-  // arm with a test tube
-  blood: () => `<rect x="34" y="66" width="140" height="40" rx="20" fill="${SOFT}" ${stroke(7)}/>`
-    + `<line x1="174" y1="86" x2="202" y2="86" ${stroke(6)}/>`
-    + `<path d="M202 22 H238 V110 a18 18 0 0 1 -36 0 Z" fill="#fff" ${stroke(6)}/>`
-    + `<path d="M202 88 H238 V110 a18 18 0 0 1 -36 0 Z" fill="${INK}"/>`,
-  // chest picture: dark film with a spine and ribs
-  xray: () => `<rect x="82" y="16" width="136" height="126" rx="10" fill="${INK}"/>`
-    + `<line x1="150" y1="28" x2="150" y2="130" ${WHITE_LINE(6)}/>`
-    + [44, 66, 88].map((y) => `<path d="M150 ${y} Q116 ${y + 2} 104 ${y + 24}" fill="none" ${WHITE_LINE(5)}/>`
-      + `<path d="M150 ${y} Q184 ${y + 2} 196 ${y + 24}" fill="none" ${WHITE_LINE(5)}/>`).join(''),
-  // paper with folded corner and lines
-  prescription: () => `<path d="M104 18 H178 L200 40 V142 H104 Z" fill="#fff" ${stroke(6)}/>`
-    + `<path d="M178 18 V40 H200" fill="${SOFT}" ${stroke(6)}/>`
-    + [66, 88, 110].map((y) => `<line x1="118" y1="${y}" x2="186" y2="${y}" ${stroke(5)}/>`).join(''),
-  // medicine bag with a cross
-  medicine: () => `<rect x="96" y="40" width="108" height="100" rx="8" fill="${SOFT}" ${stroke(7)}/>`
-    + `<rect x="96" y="22" width="108" height="22" rx="6" fill="#fff" ${stroke(6)}/>`
-    + `<rect x="126" y="66" width="48" height="48" rx="6" fill="#fff" ${stroke(5)}/>`
-    + `<line x1="150" y1="74" x2="150" y2="106" ${stroke(7)}/><line x1="134" y1="90" x2="166" y2="90" ${stroke(7)}/>`,
-  // chair seen from the side
-  wait: () => `<line x1="108" y1="24" x2="108" y2="100" ${stroke(10)}/>`
-    + `<rect x="104" y="84" width="96" height="18" rx="5" fill="${SOFT}" ${stroke(6)}/>`
-    + `<line x1="112" y1="102" x2="112" y2="142" ${stroke(8)}/><line x1="192" y1="102" x2="192" y2="142" ${stroke(8)}/>`,
+// Indoor pictures: 3D icons (400x400 transparent WebP in img/icons/) placed in the top 144 units of
+// the 300x280 picture frame; the label goes below, like the exit and building pictures. The image
+// shows no text of its own. The kind-to-file table is explicit on purpose.
+const INDOOR_FILE = {
+  consult: 'place-consult',
+  pay: 'place-pay',
+  blood: 'place-blood',
+  xray: 'place-xray',
+  prescription: 'place-prescription',
+  medicine: 'place-medicine',
+  wait: 'place-wait',
 };
 
-export const INDOOR_KINDS = Object.keys(INDOOR_ICON);
+export const INDOOR_KINDS = Object.keys(INDOOR_FILE);
+
+// Square, centred horizontally (80..220), 4..144 vertically: clear of the label block that starts at y=152.
+const indoorImage = (name) => `<image href="img/icons/${name}.webp" x="80" y="4" width="140" height="140" `
+  + 'preserveAspectRatio="xMidYMid meet"/>';
 
 /** The picture-box SVG string for a spec from pictoSpec(). */
 export function pictoSvg(spec) {
@@ -185,8 +163,8 @@ export function pictoSvg(spec) {
     return frame(board + text, aria);
   }
   let icon;
-  if (INDOOR_ICON[kind]) {
-    icon = INDOOR_ICON[kind]();
+  if (INDOOR_FILE[kind]) {
+    icon = indoorImage(INDOOR_FILE[kind]);
   } else if (kind === 'exit') {
     icon = `<rect x="96" y="20" width="108" height="120" rx="10" fill="${SOFT}" ${stroke()}/>`
       + `<rect x="116" y="44" width="68" height="96" fill="#fff" ${stroke(4)}/>`
@@ -210,29 +188,17 @@ export function pictoSvg(spec) {
   return frame(icon + text, aria);
 }
 
-/** Big circle used on the arrival screen. */
+/** Big picture used on the arrival screen (3D "done" mark inside the 200x200 frame). */
 export function doneSvg() {
-  return `<svg class="picto picto-done" viewBox="0 0 200 200" role="img" aria-label="완료" `
-    + `xmlns="http://www.w3.org/2000/svg" focusable="false">`
-    + `<circle cx="100" cy="100" r="82" fill="#fff" stroke="${INK}" stroke-width="16"/></svg>`;
+  return svgFrame(iconImage('mark-done'), '완료', 'picto picto-done');
 }
 
 /** Small picture for the "what to bring" screen: `idcard` or `document`. */
 export function itemSvg(kind, label) {
   const aria = escapeXml(label || (kind === 'idcard' ? '신분증' : '서류'));
-  if (kind === 'idcard') {
-    return `<svg class="picto-item" viewBox="0 0 120 90" role="img" aria-label="${aria}" xmlns="http://www.w3.org/2000/svg" focusable="false">`
-      + `<rect x="6" y="10" width="108" height="70" rx="10" fill="#fff" ${stroke(5)}/>`
-      + `<circle cx="38" cy="38" r="12" fill="${SOFT}" ${stroke(4)}/>`
-      + `<path d="M18 68 C 20 54 56 54 58 68" fill="${SOFT}" ${stroke(4)}/>`
-      + `<line x1="70" y1="32" x2="100" y2="32" ${stroke(5)}/><line x1="70" y1="48" x2="100" y2="48" ${stroke(5)}/>`
-      + `<line x1="70" y1="64" x2="92" y2="64" ${stroke(5)}/></svg>`;
-  }
+  const file = kind === 'idcard' ? 'mark-idcard' : 'mark-document';
   return `<svg class="picto-item" viewBox="0 0 120 90" role="img" aria-label="${aria}" xmlns="http://www.w3.org/2000/svg" focusable="false">`
-    + `<path d="M30 6 H78 L96 24 V84 H30 Z" fill="#fff" ${stroke(5)}/>`
-    + `<path d="M78 6 V24 H96" fill="${SOFT}" ${stroke(5)}/>`
-    + `<line x1="42" y1="42" x2="84" y2="42" ${stroke(5)}/><line x1="42" y1="56" x2="84" y2="56" ${stroke(5)}/>`
-    + `<line x1="42" y1="70" x2="70" y2="70" ${stroke(5)}/></svg>`;
+    + `<image href="img/icons/${file}.webp" x="0" y="0" width="120" height="90" preserveAspectRatio="xMidYMid meet"/></svg>`;
 }
 
 /** Which item picture a checklist entry gets, from its own text. */
@@ -253,6 +219,7 @@ const HERO_LABELS = {
   hospital: '병원 건물 그림',
   'first-visit': '처음 방문하는 사람 그림',
   reception: '접수 창구에서 직원이 돕는 그림',
+  dept: '진료과 안내를 도와주는 의사 그림',
 };
 
 export const HERO_KINDS = Object.keys(HERO_LABELS);
@@ -290,10 +257,22 @@ export const receptionSvg = (cls) => heroSvg('reception', cls);
 /** Hero illustrations shown above the choices of each question step, in display order. */
 export const HERO_BY_STEP = {
   hospital: ['hospital'],
+  dept: ['dept'],
   visit: ['first-visit'],
   mobility: ['walker', 'wheelchair'],
   reception: ['reception'],
 };
+
+// Small marks used as icons (not illustrations): 400x400 WebP in img/icons/, same 200x200 frame.
+const MARK_LABELS = { mic: '마이크 그림' };
+
+export const MARK_KINDS = Object.keys(MARK_LABELS);
+
+/** Inline SVG string of a mark icon. `kind` is one of MARK_KINDS; `cls` is the CSS class. */
+export function markSvg(kind, cls = 'btn-icon') {
+  if (!MARK_LABELS[kind]) throw new Error(`unknown mark kind: ${kind}`);
+  return svgFrame(iconImage(`mark-${kind}`), MARK_LABELS[kind], cls);
+}
 
 /** Small icon at the left of each mobility answer button, by answer value. */
 export const MOBILITY_ICON = { walker: 'walker', wheelchair: 'wheelchair', none: 'walking' };

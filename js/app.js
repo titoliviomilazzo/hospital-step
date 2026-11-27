@@ -12,7 +12,7 @@ import { arrowAngle, bearingDeg, createCompassController, quantiseHeading } from
 import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
-import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
+import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, markSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
 import { POSITION_MSG, createPositionController, navItems, targetAngle, arrowFitPx, targetCaption, autoStartPlan, needsArrowButton } from './navarrow.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
 import { loadFloor, renderFloorMap, floorFocus, indoorArrow, indoorBearing, INDOOR_ARROW_NOTE, FLOOR_BEARING_NOTE } from './floor.js';
@@ -811,9 +811,11 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
   // ------------------------------------------------------------ screens
 
   /** A big full-width answer button: leading symbol, then the label. */
-  function answerButton(sym, label, attrs, iconKind = null) {
+  function answerButton(sym, label, attrs, iconKind = null, markKind = null) {
     const { class: extra, ...rest } = attrs;
-    const lead = iconKind
+    const lead = markKind
+      ? h('span', { class: 'sym icon', 'aria-hidden': 'true' }, svgNode(markSvg(markKind, 'btn-icon')))
+      : iconKind
       ? h('span', { class: 'sym icon', 'aria-hidden': 'true' }, svgNode(heroSvg(iconKind, 'btn-icon')))
       : h('span', { class: 'sym', 'aria-hidden': 'true' }, sym);
     return h('button', { type: 'button', ...rest, class: `btn answer${extra ? ` ${extra}` : ''}` },
@@ -866,8 +868,8 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
     }
     main.append(answers);
 
-    main.append(answerButton('🎤', listening ? '듣는 중... 눌러서 끝내기' : '말로 대답하기',
-      { id: 'btn-talk', class: 'talk-btn', disabled: parsing, onclick: onTalk }));
+    main.append(answerButton(null, listening ? '듣는 중... 눌러서 끝내기' : '말로 대답하기',
+      { id: 'btn-talk', class: 'talk-btn', disabled: parsing, onclick: onTalk }, null, 'mic'));
     if (listenMsg) main.append(h('p', { class: 'note', role: 'status' }, listenMsg));
     if (typedOpen) {
       main.append(h('div', { class: 'typed' },
