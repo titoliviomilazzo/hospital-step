@@ -211,9 +211,15 @@ details.more[open] > summary { margin-bottom: 12px; }
 .nav-dist { margin: 4px 0; font-size: 28px; font-weight: 800; text-align: center; }
 .picto-caption { margin: 0; font-size: 28px; font-weight: 800; text-align: center; }
 .sign-note { margin: 0; font-size: 24px; font-weight: 700; text-align: center; }
-.arrow-holder { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 100%; overflow: hidden; }
-.arrow-holder canvas { display: block; aspect-ratio: 1 / 1; width: min(280px, 100%); height: auto; }
-.arrow-svg { width: min(280px, 100%); height: auto; }
+/* The arrow box is a square: 62vw up to 240px; on short screens 50vw up to 190px so it clears the bottom bar. */
+/* app.js fitArrow() sets --arrow-size (120px up to the CSS size) so the arrow box clears the bar; without JS the CSS size applies. */
+.arrow-holder { display: flex; flex-direction: column; align-items: center; justify-content: center; width: var(--arrow-size, min(62vw, 240px)); height: var(--arrow-size, min(62vw, 240px)); max-width: 100%; overflow: hidden; margin: 0 auto; }
+.arrow-holder canvas { display: block; width: 100%; height: 100%; }
+.arrow-svg { display: block; width: 100%; height: 100%; }
+/* Bus points (waiting, riding) keep the former arrow size and place. */
+.arrow-holder.legacy { width: 100%; height: auto; overflow: hidden; margin: 0; }
+.arrow-holder.legacy canvas { aspect-ratio: 1 / 1; width: min(280px, 100%); height: auto; }
+.arrow-holder.legacy .arrow-svg { width: min(280px, 100%); height: auto; }
 /* Floor schematic (simulation mode, indoor points) and the real-mode facility number line. */
 .floor-map { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; min-width: 0; }
 #sim-panel:has(.floor-map) { padding: 8px 12px; min-width: 0; overflow: hidden; } /* more room for the plan on a 375 px phone */
@@ -277,9 +283,10 @@ textarea {
 /* Walk points with a target: the arrow on the left, straight-line distance and target name on the right. */
 .picto-box.nav-box { width: 100%; max-width: none; margin: 0; gap: 4px; }
 .nav-row { display: flex; align-items: center; gap: 12px; width: 100%; }
-.nav-row .arrow-holder { flex: 0 0 116px; width: 116px; }
-.nav-row .arrow-svg { width: 112px; height: 112px; }
-.nav-row .arrow-holder canvas { width: 112px; }
+/* With the big arrow the row stacks: arrow on top, distance and target name centred below it. */
+.nav-row:has(.arrow-holder) { flex-direction: column; gap: 4px; }
+.nav-row:has(.arrow-holder) .nav-side { align-items: center; }
+.nav-row:has(.arrow-holder) .nav-dist, .picto-box .nav-row:has(.arrow-holder) .nav-side .picto-caption { text-align: center; }
 .nav-notes { width: 100%; display: flex; flex-direction: column; gap: 2px; }
 .nav-notes .note { margin: 0; text-align: center; }
 .nav-pic { flex: 0 0 120px; width: 120px; }

@@ -3,6 +3,7 @@
 // (y grows downward). The layout keeps that convention: pixel y also grows downward.
 
 import { escapeXml, textWidthEm } from './pictos.js';
+import { arrowAngle } from './compass.js';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
 const isPercent = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100;
@@ -281,6 +282,58 @@ export function floorFocus(route, index) {
   if (q && q.stage === 'indoor' && Number.isInteger(q.facility)) next = q.facility;
   else if (q && p && p.stage === 'indoor' && q.stage === 'return') next = FLOOR_ENTRANCE;
   return { current, next };
+}
+
+/** Fixed line under an indoor arrow (never spoken). */
+export const INDOOR_ARROW_NOTE = '대략 이 방향이에요. 표지판도 함께 보세요.';
+
+const onThisFloor = (p, floor) => Boolean(p && p.stage === 'indoor' && p.floor === floor.id);
+
+/**
+ * Compass bearing (degrees clockwise from north, [0, 360)) of the straight line on the floor picture
+ * from where the user stands to where the point at `index` is, or null when no honest arrow exists.
+ * Destination: the facility of an indoor point of this floor; or, for the first point after an indoor
+ * point (the way out), the entrance mark. Origin: the facility of the previous point, or the entrance
+ * mark when the previous point has no facility or is not an indoor point of this floor. Null when a
+ * facility or mark is missing from the floor data, or origin and destination are the same place.
+ * Pure. Picture units (x% * width / 100, y% * height / 100) keep the true proportions; y grows downward.
+ */
+export function indoorBearing(route, floor, index) {
+  const p = route && route.points ? route.points[index] : null;
+  if (!p || !floor) return null;
+  const prev = route.points[index - 1] || null;
+  const entrance = (floor.marks || []).find((m) => m.id === FLOOR_ENTRANCE) || null;
+  const prevFacility = onThisFloor(prev, floor) && Number.isInteger(prev.facility);
+  let origin;
+  let dest;
+  if (onThisFloor(p, floor)) {
+    if (!Number.isInteger(p.facility)) return null;
+    dest = facilityByNo(floor, p.facility);
+    origin = prevFacility ? facilityByNo(floor, prev.facility) : entrance;
+  } else if (p.stage === 'return' && prevFacility) {
+    dest = entrance;
+    origin = facilityByNo(floor, prev.facility);
+  } else {
+    return null;
+  }
+  if (!dest || !origin) return null;
+  const pic = floor.picture || { width: 100, height: 100 };
+  const dx = ((dest.x - origin.x) * pic.width) / 100;
+  const dy = ((dest.y - origin.y) * pic.height) / 100;
+  if (dx === 0 && dy === 0) return null;
+  const up = floor.north && Number.isFinite(floor.north.upBearingDeg) ? floor.north.upBearingDeg : 0;
+  return norm360((Math.atan2(dx, -dy) * 180) / Math.PI + up);
+}
+
+/**
+ * Indoor arrow for the point at `index`: {bearing, angle} or null (see indoorBearing). `angle` is the
+ * drawn rotation (clockwise from the top of the screen) for the heading the user faces, or null when
+ * `headingDeg` is not a finite number (no compass reading yet).
+ */
+export function indoorArrow(route, floor, index, headingDeg) {
+  const bearing = indoorBearing(route, floor, index);
+  if (bearing === null) return null;
+  return { bearing, angle: Number.isFinite(headingDeg) ? arrowAngle(bearing, headingDeg) : null };
 }
 
 /** Facility numbers any point of the route refers to, in route order, without repeats. */

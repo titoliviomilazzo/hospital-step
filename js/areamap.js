@@ -9,6 +9,8 @@
 // every label placed by computed coordinates and kept upright (no rotate transform anywhere).
 
 import { haversineMeters, STOP_MAX_ACCURACY_M } from './alight.js';
+import { targetAngle } from './navarrow.js';
+import { bearingDeg } from './compass.js';
 
 export const AREA_ATTRIBUTION = '지도 © OpenStreetMap 기여자';
 export const AREA_CAPTION = '대략적인 위치예요. 걷는 길이 아니라 직선이에요.';
@@ -224,6 +226,19 @@ export function walkStart(route, area, index) {
     return ex ? { lat: ex.lat, lon: ex.lon, name: `미금역 ${ex.ref}번 출구` } : null;
   }
   return null;
+}
+
+/**
+ * Simulation arrow of a walking point (O1, O4, R1, R4): from where the walk starts (walkStart, the
+ * same place the distance line uses) to the point's official target. Returns {bearing, angle} or null
+ * when the point has no target, the start is unknown or the heading is not a number.
+ */
+export function simWalkArrow(route, area, index, headingDeg) {
+  const p = route.points[index];
+  const start = walkStart(route, area, index);
+  if (!p || !p.target || !start) return null;
+  const angle = targetAngle(start, p.target, headingDeg);
+  return angle === null ? null : { bearing: bearingDeg(start, p.target), angle };
 }
 
 // ---------------------------------------------------------------- riding progress

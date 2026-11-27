@@ -13,11 +13,11 @@ import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
 import { renderArrow3d, disposeArrow3d } from './arrow3d.js';
 import { initialSim, simReducer, simArrow, renderMiniMap, BANNER_TEXT, MAP_NOTE, HEADING_MAX } from './sim.js';
 import { pictoSpec, pictoSvg, doneSvg, itemSvg, itemKind, svgNode, heroSvg, HERO_BY_STEP, MOBILITY_ICON } from './pictos.js';
-import { POSITION_MSG, createPositionController, navItems, targetAngle, targetCaption, autoStartPlan, needsArrowButton } from './navarrow.js';
+import { POSITION_MSG, createPositionController, navItems, targetAngle, arrowFitPx, targetCaption, autoStartPlan, needsArrowButton } from './navarrow.js';
 import { startAlightWatch, simulatedSource, simulatedRouteSource } from './alight.js';
-import { loadFloor, renderFloorMap, floorFocus, FLOOR_BEARING_NOTE } from './floor.js';
+import { loadFloor, renderFloorMap, floorFocus, indoorArrow, indoorBearing, INDOOR_ARROW_NOTE, FLOOR_BEARING_NOTE } from './floor.js';
 import { arrivalPointFor, fetchArrivalDetail, locationText, REFRESH_MS, stopLabel } from './arrival.js';
-import { loadArea, renderAreaMap, sceneFor, ridingProgress, walkStart, remainingText, nextStopText } from './areamap.js';
+import { loadArea, renderAreaMap, sceneFor, ridingProgress, walkStart, simWalkArrow, remainingText, nextStopText } from './areamap.js';
 import {
   createNotesFlow, createWakeLock, asksNotesAfter, isConsultPoint, showEnterRoomButton, recordForDate, localDate,
   shouldOfferNotes, helpMaySpeak, TAP_GUARD_MS, isVisitRecord,
@@ -417,6 +417,28 @@ function syncBarHeight() {
   const bar = document.querySelector('.bar');
   if (!bar || !document.documentElement) return;
   document.documentElement.style.setProperty('--bar-real', `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+  fitArrow();
+}
+
+/**
+ * Sizes the big arrow so the whole arrow box (arrow plus the lines right under it) stays above the
+ * fixed bar at scroll 0. The CSS size (min(62vw, 240px)) is the upper bound; 120px the lower one.
+ * The arithmetic is arrowFitPx; this only measures and sets --arrow-size.
+ */
+function fitArrow() {
+  if (typeof document === 'undefined') return;
+  const holder = document.querySelector('.arrow-holder:not(.legacy)');
+  const bar = document.querySelector('.bar');
+  if (!holder || !bar) return;
+  const box = holder.closest('#arrow-box') || holder.parentElement;
+  holder.style.removeProperty('--arrow-size');
+  const hr = holder.getBoundingClientRect();
+  const max = hr.width;
+  if (!(max > 0)) return;
+  const scroll = typeof window !== 'undefined' ? (window.scrollY || 0) : 0;
+  const below = Math.max(0, box.getBoundingClientRect().bottom - hr.bottom);
+  const px = arrowFitPx({ holderTop: hr.top + scroll, barTop: bar.getBoundingClientRect().top, below, max });
+  holder.style.setProperty('--arrow-size', `${px}px`);
 }
 let barObserver = null;
 function watchBar() {
@@ -424,6 +446,7 @@ function watchBar() {
   if (barObserver || !bar || typeof ResizeObserver === 'undefined') return;
   barObserver = new ResizeObserver(syncBarHeight);
   barObserver.observe(bar);
+  if (typeof window !== 'undefined') window.addEventListener('resize', syncBarHeight);
 }
 
 /** Sets the one persistent instruction heading (inside the aria-live region) only when it changes. */
@@ -965,19 +988,26 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
   function arrowInfo() {
     if (state.index < 0) return null;
     if (settings.sim) {
+      const wa = simWalkArrow(route, area, state.index, sim.heading); // O1/O4/R1/R4: real geography
+      if (wa) return { angle: wa.angle };
       const a = simArrow(route, state.index, sim.heading);
-      return a ? { angle: a.angle } : null;
+      if (a) return { angle: a.angle };
+      const ia = floor ? indoorArrow(route, floor, state.index, sim.heading) : null;
+      return ia && ia.angle !== null ? { angle: ia.angle, indoor: true } : null;
     }
     const p = route.points[state.index];
     if (p.target) {
       const a = targetAngle(pos, p.target, heading);
-      return a === null ? null : { angle: a };
+      if (a !== null) return { angle: a };
+    } else {
+      const next = route.points[state.index + 1];
+      if (OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord && heading !== null) {
+        return { angle: arrowAngle(bearingDeg(p.coord, next.coord), heading) };
+      }
     }
-    const next = route.points[state.index + 1];
-    if (OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord && heading !== null) {
-      return { angle: arrowAngle(bearingDeg(p.coord, next.coord), heading) };
-    }
-    return null;
+    // Indoors (and R1 before a position fix): the straight line on the floor picture, once a heading exists.
+    const ia = floor ? indoorArrow(route, floor, state.index, heading) : null;
+    return ia && ia.angle !== null ? { angle: ia.angle, indoor: true } : null;
   }
 
   /** Real mode: an arrow could be drawn once a heading exists (both points have coord). */
@@ -986,7 +1016,14 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     const p = route.points[state.index];
     if (p.target) return true;
     const next = route.points[state.index + 1];
-    return Boolean(OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord);
+    if (OUTDOOR_STAGES.includes(p.stage) && next && next.stage === p.stage && p.coord && next.coord) return true;
+    return Boolean(floor && indoorBearing(route, floor, state.index) !== null);
+  }
+
+  /** Simulation: true when the current point can show an arrow (so the heading slider is offered). */
+  function simHasArrow() {
+    return Boolean(simWalkArrow(route, area, state.index, 0) || simArrow(route, state.index, 0)
+      || (floor && indoorBearing(route, floor, state.index) !== null));
   }
 
   /** The official target of the current point in real mode (an arrow can point at it), else null. */
@@ -1074,7 +1111,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     syncFloorStep();
     const sim = settings.sim;
     // The map turns to the heading only where an arrow can point (real mode; in simulation, with the slider).
-    const turns = Boolean(p.target) && (!sim || Boolean(simArrow(route, state.index, 0)));
+    const turns = Boolean(p.target) && (!sim || simHasArrow());
     return sceneFor(route, area, state.index, {
       pos: p.target ? (sim ? null : pos) : ridePos,
       sim,
@@ -1178,6 +1215,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
           oninput: (e) => {
             sim = simReducer(sim, { type: 'SET_HEADING', value: e.target.value });
             readout.textContent = `${sim.heading}도`;
+            refreshArrow(); // the arrow follows the raw slider value; the map keeps its 15-degree step
             if (syncFloorStep()) redrawFloor();
           } }),
         readout,
@@ -1198,7 +1236,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     if (floor && here && here.stage === 'indoor' && here.floor === floor.id) return floorPanel();
     const box = h('div', { class: 'card', id: 'sim-panel' }, renderMiniMap(route, state.index),
       h('p', { class: 'muted' }, MAP_NOTE));
-    if (simArrow(route, state.index, sim.heading)) {
+    if (simHasArrow()) {
       const readout = h('output', { id: 'heading-readout', for: 'heading-slider' }, `${sim.heading}도`);
       box.append(
         h('label', { for: 'heading-slider', class: 'setting-title' }, '내가 바라보는 방향 (모식도 위쪽이 0도)'),
@@ -1399,7 +1437,8 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     const info = arrowInfo();
     const showNav = Boolean(p.target) && (Boolean(currentTarget()) || settings.sim);
     if (info) {
-      const holder = h('div', { class: 'arrow-holder', id: 'arrow-holder' });
+      // Bus points keep the old, smaller arrow (legacy); the big one is for walking and indoor points.
+      const holder = h('div', { class: p.kind === 'bus' ? 'arrow-holder legacy' : 'arrow-holder', id: 'arrow-holder' });
       box.classList.add('arrow-mode');
       box.append(holder);
       mountArrow(holder, info.angle);
@@ -1409,6 +1448,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
         box.replaceChildren(h('div', { class: 'nav-row' }, holder,
           h('div', { class: 'nav-side' }, navStatusBox(p), h('p', { class: 'picto-caption' }, targetCaption(p.target)))), navNotesBox(p));
       } else if (spec.label) box.append(h('p', { class: 'picto-caption' }, spec.label));
+      if (info.indoor) box.append(h('p', { class: 'note', id: 'indoor-arrow-note' }, INDOOR_ARROW_NOTE));
     } else {
       if (showNav) {
         // No arrow yet: the picture on the left, the status (finding, notes) on the right.
@@ -1424,7 +1464,9 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     const main = h('div', { class: 'stack' });
     const arrivedHere = state.arrived && state.index === route.points.length - 1;
     // Always visible, first on the screen (never inside the collapsible details).
-    if (p.keepPapers ) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT));
+    // With a big arrow on screen the arrow block goes first and this note sits right below it.
+    const bigArrow = !state.arrived && p.kind !== 'bus' && Boolean(arrowInfo());
+    if (p.keepPapers && !bigArrow) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT));
 
     // The user said yes on N0: the doctor's consent card (N1) opens from this one big button, which
     // sits first so it is above the bar without scrolling, even in simulation mode.
@@ -1459,9 +1501,16 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
       if (p.alertCoord) main.append(alightPanel(p));
       // Indoor (both modes): the floor plan comes first so it is visible without scrolling, and the
       // picture below it shrinks to the compact size.
+      // When an arrow is drawn the order flips: the big arrow first (full size), the plan under it.
       const planFirst = showsFloorMap(p);
-      if (planFirst) main.append(floorPanel());
-      main.append(pictureBox(p, Boolean(p.alertCoord) || planFirst || areaShown(p)));
+      if (bigArrow) {
+        main.append(pictureBox(p, false));
+        if (p.keepPapers) main.append(h('p', { class: 'keep-papers', id: 'keep-papers', role: 'note' }, KEEP_PAPERS_TEXT));
+        if (planFirst) main.append(floorPanel());
+      } else {
+        if (planFirst) main.append(floorPanel());
+        main.append(pictureBox(p, Boolean(p.alertCoord) || planFirst || areaShown(p)));
+      }
       // On a target point the arrow button comes first (the sign note moves below it).
       const signNote = arrowInfo() ? null : h('p', { class: 'sign-note' }, p.kind === 'bus' && p.alertCoord ? BUS_NOTE : SIGN_FALLBACK);
       if (signNote && !currentTarget()) main.append(signNote);
@@ -1677,6 +1726,7 @@ function boot(route, support, floor = null, area = null, sample = null, sampleMe
     // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
     // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
     $('instruction').classList.toggle('compact', Boolean((p && p.alertCoord) || (nScreen && nScreen.compact)
+      || (p && !nScreen && p.kind !== 'bus' && arrowInfo()) // the big arrow must fit above the bar
       || (p && isConsultPoint(p)) || (p && state.arrived && state.index === route.points.length - 1))); // I4 / arrival: the room / show-the-doctor buttons must stay above the bar
     areaHost = null; // set again only when this screen builds a map
     syncArrival(p);

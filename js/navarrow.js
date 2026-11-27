@@ -27,6 +27,18 @@ export function targetAngle(pos, target, heading) {
   return arrowAngle(bearingDeg(pos, target), heading);
 }
 
+/**
+ * Side of the square arrow box in px: the room between the box top and the bar (minus `gap` and what
+ * must fit `below` the box), kept between `min` and `max`. `max` wins when it is smaller than `min`;
+ * when the room is unknown the box keeps `max`. Pure.
+ */
+export function arrowFitPx({ holderTop, barTop, below = 0, max, min = 120, gap = 16 }) {
+  if (!Number.isFinite(max)) return min;
+  const room = barTop - gap - holderTop - (Number.isFinite(below) ? below : 0);
+  if (!Number.isFinite(room)) return Math.round(max);
+  return Math.round(Math.min(max, Math.max(min, room)));
+}
+
 /** Metres to the target, or null without a position. */
 export function targetDistanceM(pos, target) {
   if (!isFix(pos) || !isFix(target)) return null;
