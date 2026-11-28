@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>병원한걸음 실시간 시연</title>
+<!-- Live demo stage: the film's layout (situation picture + caption on the left) with the REAL web app running inside a
+     Galaxy-sized phone frame on the right. The presenter operates the app with the mouse and moves the left side on
+     with the arrow keys; the app is never reloaded when the picture changes.
+     Phone size: Galaxy S24 web viewport 360x780 CSS px by default; ?w=412&h=915 etc. overrides it, ?app=<url> changes the app.
+     Served from the app's own site (demo/stage.html) the page can read the app screen, so the picture follows the app by
+     itself; opened from a file it cannot (browser same-origin rule) and only the arrow keys move it. -->
+<style>
+  :root { --ink: #1E293B; --paper: #F6EFE3; --tint: #93C5FD; }
+  html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; background: var(--paper); overflow: hidden; }
+  #glow { position: absolute; right: -200px; top: -100px; width: 1100px; height: 1300px; background: radial-gradient(closest-side, color-mix(in srgb, var(--tint) 70%, transparent), transparent); transition: background .6s; }
+  #pics { position: absolute; left: 50px; top: 80px; width: 920px; height: 920px; border-radius: 28px; overflow: hidden; box-shadow: 0 18px 40px rgba(30,41,59,.18); background: #ddd; }
+  #pics img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .45s; }
+  #pics img.on { opacity: 1; }
+  #pics img.crop { transform: scale(1.15); transform-origin: 0 100%; }
+  #ai { position: absolute; right: 16px; top: 14px; padding: 4px 12px; border-radius: 10px; background: rgba(255,255,255,.8); font-size: 18px; color: #475569; z-index: 2; }
+  #cap { position: absolute; left: 30px; bottom: 30px; max-width: 860px; padding: 14px 28px; border-radius: 16px; background: var(--ink); color: #fff; font-size: 52px; font-weight: 800; letter-spacing: -1px; z-index: 2; transition: opacity .3s; }
+  #phase { position: absolute; left: 975px; width: 400px; top: 120px; text-align: center; font-size: 40px; font-weight: 800; color: var(--ink); }
+  #dots { position: absolute; left: 975px; width: 400px; top: 185px; text-align: center; font-size: 26px; letter-spacing: 10px; color: #94A3B8; }
+  #phone { position: absolute; background: #0F172A; border-radius: 52px; box-shadow: 0 22px 50px rgba(30,41,59,.3); }
+  #screen { position: absolute; overflow: hidden; border-radius: 36px; background: #fff; }
+  #screen iframe { position: absolute; left: 0; border: 0; transform-origin: 0 0; display: block; }
+  #status { position: absolute; left: 0; top: 0; background: #000; color: #fff; transform-origin: 0 0; font-size: 13px; font-weight: 600; }
+  #status span { position: absolute; top: 5px; }
+  #punch { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #1f2937; box-shadow: inset 0 0 0 2px #374151; top: 6px; }
+  #help { position: absolute; left: 50px; bottom: 26px; font-size: 18px; color: #64748B; }
+  body.clean #help { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="glow"></div>
+  <div id="pics"><span id="ai">AI 생성 이미지</span><div id="cap"></div></div>
+  <div id="phase"></div><div id="dots"></div>
+  <div id="phone"><div id="screen"><div id="status"><span id="clock" style="left:16px">9:41</span><div id="punch"></div><span style="right:14px">▮▮▮ 100%</span></div><iframe id="app" allow="geolocation; accelerometer; gyroscope; magnetometer; autoplay"></iframe></div></div>
+  <div id="help">→ / Space 다음 · ← 이전 · H 도움말 숨김 · F 전체 화면</div>
+</div>
+<script>
+// cards: same pictures and captions as the film (plan.json)
+const SEGS = [
+  { phase: '1단계 방문 준비', color: '#93C5FD', cards: [['s1', '혼자 가는 외래'], ['s1b', '한 화면에 질문 하나']] },
+  { phase: '2단계 이동 안내', color: '#6EE7B7', cards: [['s2b', '지금 할 일 하나'], ['s2b', '몸을 돌리면 화살표도 돈다']] },
+  { phase: '3단계 병원 안', color: '#FDE047', cards: [['s3lobby', '다음 갈 곳을 지도로'], ['s5', '선생님께 보여 드리기'], ['s3b', '처방전은 사진으로 보관']] },
+  { phase: '4단계 돌아와서', color: '#FDBA74', cards: [['s2', '돌아가는 길까지'], ['s4', '미금역까지 안내 끝'], ['s6', '병원 문자를 정리해요'], ['s6', '다음 예약 날짜'], ['s7', '달력에 넣으면 휴대폰이 알려 줘요']] },
+];
+const CROP = { s2b: true };   // the film crops s2b so a Seoul landmark the generator added stays out of frame
+const q = new URLSearchParams(location.search);
+const VW = +q.get('w') || 360, VH = +q.get('h') || 780;          // phone web viewport in CSS px (Galaxy S24 default)
+const SAME_SITE = /\/demo\/[^/]*$/.test(location.pathname) && location.protocol.startsWith('http');
+const APP = q.get('app') || (SAME_SITE ? '../index.html' : 'https://titoliviomilazzo.github.io/hospital-step/');
+const IMG_DIR = q.get('img') || 'img/';
+
+// phone: screen fills 1010 px of the 1080 stage height; the app keeps its true viewport and is scaled up to fit
+const SB = 24;                                                  // Android status bar (CSS px) with the punch-hole camera
+const BEZ = 13, SH = 1010, K = SH / VH, SW = Math.round(VW * K);
+const PW = SW + 2 * BEZ, PH = SH + 2 * BEZ, PX = 1920 - 50 - PW, PY = (1080 - PH) / 2;
+const $ = id => document.getElementById(id);
+Object.assign($('phone').style, { left: PX + 'px', top: PY + 'px', width: PW + 'px', height: PH + 'px' });
+Object.assign($('screen').style, { left: BEZ + 'px', top: BEZ + 'px', width: SW + 'px', height: SH + 'px' });
+Object.assign($('status').style, { width: VW + 'px', height: SB + 'px', transform: `scale(${K})` });
+Object.assign($('app').style, { top: SB * K + 'px', width: VW + 'px', height: VH - SB + 'px', transform: `scale(${K})` });
+$('punch').style.left = VW / 2 - 6 + 'px';
+const tick = () => { const d = new Date(); $('clock').textContent = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'); }; tick(); setInterval(tick, 10000);
+$('phase').style.left = $('dots').style.left = (970 + (PX - 970) / 2 - 200) + 'px';
+$('app').src = APP;
+
+// pictures
+const flat = SEGS.flatMap((s, si) => s.cards.map(([img, cap]) => ({ si, img, cap })));
+const els = {};
+for (const name of new Set(flat.map(c => c.img))) {
+  const im = new Image(); im.src = IMG_DIR + name + '.webp'; if (CROP[name]) im.className = 'crop'; $('pics').insertBefore(im, $('ai')); els[name] = im;
+}
+let i = 0;
+function show() {
+  const c = flat[i], s = SEGS[c.si];
+  for (const k in els) els[k].classList.toggle('on', k === c.img);
+  $('cap').textContent = c.cap;
+  $('phase').textContent = s.phase;
+  $('dots').textContent = SEGS.map((_, k) => k === c.si ? '●' : '○').join('');
+  document.documentElement.style.setProperty('--tint', s.color);
+}
+function fit() { const k = Math.min(innerWidth / 1920, innerHeight / 1080); const st = $('stage').style; st.transform = `scale(${k})`; st.left = (innerWidth - 1920 * k) / 2 + 'px'; st.top = (innerHeight - 1080 * k) / 2 + 'px'; }
+addEventListener('resize', fit); fit(); show();
+// keys work while the stage has focus; after clicking inside the app, click the picture once to give the keys back
+function onKey(e) {
+  if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) { i = Math.min(flat.length - 1, i + 1); show(); e.preventDefault(); }
+  else if (['ArrowLeft', 'PageUp'].includes(e.key)) { i = Math.max(0, i - 1); show(); e.preventDefault(); }
+  else if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('clean');
+  else if (e.key === 'f' || e.key === 'F') (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
+}
+addEventListener('keydown', onKey);
+// after a click inside the app the keys go to the app: on the same site, pass the page keys (not Space, which presses app buttons) back up
+$('app').addEventListener('load', () => { try { $('app').contentWindow.addEventListener('keydown', e => { if (['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp'].includes(e.key)) onKey(e); }); } catch (err) { /* other site */ } });
+// follow the app: read its stage label and screen, pick the matching card; a manual key press holds until the app moves on
+const CARD = Object.fromEntries(flat.map((c, k) => [c.cap, k]));
+function cardFor(d) {
+  const vis = sel => { const e = d.querySelector(sel); return Boolean(e && e.offsetParent); };
+  const pill = (d.getElementById('stage-pill')?.innerText || '').trim();
+  const prog = (d.getElementById('progress')?.innerText || '').replace(/\s/g, '');
+  const head = [...d.querySelectorAll('h1, h2')].filter(e => e.offsetParent).map(e => e.innerText).join(' ');
+  const buttons = [...d.querySelectorAll('button')].filter(e => e.offsetParent).map(e => e.innerText).join(' ');
+  const text = d.body.innerText;
+  if (head.includes('사진') && pill.includes('기록')) return '처방전은 사진으로 보관';
+  if (pill.startsWith('1단계')) return prog.startsWith('1/') ? '혼자 가는 외래' : '한 화면에 질문 하나';
+  if (pill.startsWith('2단계')) return vis('#btn-compass') ? '몸을 돌리면 화살표도 돈다' : '지금 할 일 하나';
+  if (pill.startsWith('3단계')) {
+    if (d.body.classList.contains('modal-open')) return '선생님께 보여 드리기';
+    return vis('#btn-rx-photo') ? '처방전은 사진으로 보관' : '다음 갈 곳을 지도로';
+  }
+  if (pill.startsWith('4단계')) return vis('#btn-arrived-paste') ? '미금역까지 안내 끝' : '돌아가는 길까지';
+  if (pill.includes('기록')) {
+    if (buttons.includes('달력에 넣기')) return '달력에 넣으면 휴대폰이 알려 줘요';
+    if (text.includes('다음에 오는 날') || text.includes('약 드시는 법')) return '다음 예약 날짜';
+    return '병원 문자를 정리해요';
+  }
+  return null;
+}
+let lastAuto = null;
+setInterval(() => {
+  let d; try { d = $('app').contentDocument; } catch (e) { return; }   // other site: no access, manual only
+  if (!d || !d.body) return;
+  const cap = cardFor(d);
+  if (cap && cap !== lastAuto && cap in CARD) { lastAuto = cap; i = CARD[cap]; show(); }
+}, 300);
+$('pics').addEventListener('click', () => { i = Math.min(flat.length - 1, i + 1); show(); });
+</script>
+</body>
+</html>
