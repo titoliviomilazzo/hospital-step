@@ -7,7 +7,7 @@ import { NOT_HEARD, appliedNotice, blockedNotice } from './notices.js';
 import { loadState, saveState } from './storage.js';
 import { speak, speakThen, preloadManifest, chime, vibrate, stopSpeaking, installAudioUnlock, setSpeakingListener } from './voice.js';
 import { keyPlaceSpan } from './keyplace.js';
-import { createListener, isSupported as micSupported } from './listen.js';
+import { createListener, createAnswerListener, isSupported as micSupported } from './listen.js';
 import { parseVisit, expandAbbreviations } from './intent.js';
 import { arrowAngle, bearingDeg, createCompassController, quantiseHeading } from './compass.js';
 import { renderArrow2d, setArrow2dAngle } from './arrow2d.js';
@@ -507,6 +507,7 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
   let typedText = '';
   let listening = false;
   let listenMsg = null;
+  let listenLive = ''; // text heard so far while the microphone is open
   let listenStep = null; // the question on screen when the microphone was opened
 
   // Arrow state. `heading` is the real compass reading (null until one arrives).
@@ -624,6 +625,7 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
     listener.cancel();
     listening = false;
     listenStep = null;
+    listenLive = '';
   }
 
   /** Leaving screen 1: drop the utterance and cancel any late parse or recognition result. */
@@ -874,6 +876,19 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
       main.append(h('div', { class: `hero hero-${step}`, id: 'hero' }, heroKinds.map((k) => svgNode(heroSvg(k)))));
     }
 
+    // The talk button sits above the answers so it (and the live text) stays on screen.
+    main.append(answerButton(null, listening ? '다 말했어요 (눌러서 끝내기)' : '말로 대답하기',
+      { id: 'btn-talk', class: 'talk-btn', disabled: parsing, onclick: onTalk }, null, 'mic'));
+    const talkNote = listening && listenLive ? `“${listenLive}”` : listenMsg;
+    if (talkNote) main.append(h('p', { class: 'note', role: 'status' }, talkNote));
+    if (typedOpen) {
+      main.append(h('div', { class: 'typed' },
+        h('label', { for: 'typed-text', class: 'note' }, '방문 내용을 적어 주세요.'),
+        h('textarea', { id: 'typed-text', rows: 2, oninput: (e) => { typedText = e.target.value; } }, typedText),
+        h('button', { class: 'btn', id: 'btn-typed-go', disabled: parsing,
+          onclick: () => interpret(typedText) }, '이 내용으로 채우기')));
+    }
+
     const answers = h('div', { class: 'answers' });
     for (const o of field.options) {
       const ui = ANSWER_BUTTONS[field.id][o.value];
@@ -889,17 +904,6 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
       }, field.id === 'mobility' ? MOBILITY_ICON[o.value] : null));
     }
     main.append(answers);
-
-    main.append(answerButton(null, listening ? '듣는 중... 눌러서 끝내기' : '말로 대답하기',
-      { id: 'btn-talk', class: 'talk-btn', disabled: parsing, onclick: onTalk }, null, 'mic'));
-    if (listenMsg) main.append(h('p', { class: 'note', role: 'status' }, listenMsg));
-    if (typedOpen) {
-      main.append(h('div', { class: 'typed' },
-        h('label', { for: 'typed-text', class: 'note' }, '방문 내용을 적어 주세요.'),
-        h('textarea', { id: 'typed-text', rows: 2, oninput: (e) => { typedText = e.target.value; } }, typedText),
-        h('button', { class: 'btn', id: 'btn-typed-go', disabled: parsing,
-          onclick: () => interpret(typedText) }, '이 내용으로 채우기')));
-    }
     if (parsing) main.append(h('p', { class: 'note', role: 'status' }, '해석하는 중이에요...'));
 
     const footer = wizardFooter();
@@ -1403,9 +1407,11 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
   // ------------------------------------------------------------ screen 1 input
 
   const typedFallback = (msg) => { listenMsg = msg; typedOpen = true; render(); };
-  const listener = createListener({
-    onStart: () => { listening = true; stopSpeaking(); chime(settings, 'start'); render(); },
-    onEnd: () => { listening = false; chime(settings, 'end'); render(); },
+  // Answers may pause mid-sentence: keep listening, show the live text, deliver once at the end.
+  const listener = createAnswerListener({
+    onStart: () => { listening = true; listenLive = ''; stopSpeaking(); chime(settings, 'start'); render(); },
+    onInterim: (text) => { listenLive = text; if (listening) render(); },
+    onEnd: () => { listening = false; listenLive = ''; chime(settings, 'end'); render(); },
     onResult: (text) => {
       // Only for the question that was on screen when the microphone opened.
       if (state.index < 0 && QUESTION_STEPS.includes(state.prepStep) && state.prepStep === listenStep) interpret(text);
