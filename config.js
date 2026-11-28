@@ -11,3 +11,7 @@ export const ARRIVAL_URL = 'https://hook.us2.make.com/upqrcyvgfsn1gsr1txbvetoben
 // uses the rules on the phone only (and the saved result in simulation mode). The owner fills this in
 // after building the scenario; the OpenAI key lives only in Make.
 export const NOTES_URL = '';
+// Gyeonggi bus (data.go.kr) key for direct calls from the phone, used instead of the ARRIVAL_URL proxy
+// when set (owner decision 2026-11-28: Make could not be reached). It is written only into the deployed
+// copy (sites/hospital-step/config.js), never into this source tree. Empty here means: use the proxy.
+export const BUS_KEY = '81407e8d62e71edecba16d868d250c0e247f016fa307230859843ae4ca3ee2c4';

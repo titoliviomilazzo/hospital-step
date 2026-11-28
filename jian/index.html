@@ -404,6 +404,12 @@ html.big-text .stepbar { font-size: 22px; }
 .hs-tile-img { display: block; height: 40px; width: auto; margin: 0 auto 2px; }
 @media (max-height: 640px) { .hs-hero { display: none; } }
 /* end [ported from hospital-step] */
+/* [ported from hospital-step] outdoor SVG map (rules from hospital-step style.css .area-*) */
+.hs-area-card { padding: 8px 12px; min-width: 0; overflow: hidden; }
+.area-map { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; min-width: 0; }
+.area-svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.area-caption { margin: 0; font-size: 16px; font-weight: 700; color: #5b6b66; overflow-wrap: anywhere; }
+/* end [ported from hospital-step] */
 </style>
 </head>
 <body>
@@ -711,6 +717,7 @@ window.ROUTE = {
   const HS = {
     WEBHOOK_URL: "https://hook.us2.make.com/904aunfh5larfuq2bjq8iih2bxbtl4qw",
     ARRIVAL_URL: "https://hook.us2.make.com/upqrcyvgfsn1gsr1txbvetobendj9kcr",
+    BUS_KEY: "81407e8d62e71edecba16d868d250c0e247f016fa307230859843ae4ca3ee2c4",
     AUDIO_BASE: "https://titoliviomilazzo.github.io/hospital-step/audio",
     // from hospital-step data/route.migeum-snubh.json (O2 arrival): board stop 206000852, route 7-1 = 241222004, 7-stop loop, boardSeq 1
     ARR: { stationId: 206000852, routeId: 241222004, routeName: "7-1", loopStops: 7, boardSeq: 1 },
@@ -748,12 +755,14 @@ window.ROUTE = {
   HS.arrivals = async () => {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 6000);
     try {
-      const r = await fetch(HS.ARRIVAL_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stationId: HS.ARR.stationId, routeId: HS.ARR.routeId }), signal: ctl.signal });
+      /* [ported from hospital-step] direct GBIS call with the key (Make relay unreachable, owner decision 2026-11-28) */ const r = await fetch("https://apis.data.go.kr/6410000/buslocationservice/v2/getBusLocationListv2?" + new URLSearchParams({ serviceKey: HS.BUS_KEY, routeId: String(HS.ARR.routeId), format: "json" }), { signal: ctl.signal });
       if (!r.ok) throw new Error("arrival " + r.status);
-      const p = HS.parseLoc(await r.json());
+      const j = await r.json();
+      const p = HS.parseLoc(j);
+      HS.busSeqs = HSM.parseBusSeqs(j, { loopStops: HS.ARR.loopStops }); HS.paintMap(HS.ride.step); /* [ported from hospital-step] bus markers on the map */
       const buses = p ? [{ min: null, stops: p.stopsAway, near: !!p.near, low: false, hsLive: true }] : [];
       return [{ routeId: HS.ARR.routeId, routeName: HS.ARR.routeName, dest: "", flag: "", hsLive: true, buses }];
-    } finally { clearTimeout(t); }
+    } catch (e) { HS.busSeqs = []; HS.paintMap(HS.ride.step); throw e; } finally { clearTimeout(t); }
   };
   HS.locText = (b, name) => {
     if (!b) return `지금은 ${name}번 버스 위치 정보가 없어요. ${HS.HOURS}`;
@@ -802,6 +811,674 @@ window.ROUTE = {
   // images (embedded base64), always beside/above the existing text, with Korean alt text
   HS.img = (name, alt, cls) => HS.IMG[name] ? `<img class="${cls || "hs-hero"}" src="${HS.IMG[name]}" alt="${alt}">` : "";
   /* [ported from hospital-step] end */
+
+  /* [ported from hospital-step] begin: outdoor SVG map + stop-order drop-off alerts.
+     Pure functions copied unchanged from hospital-step js/areamap.js, js/alight.js, js/arrival.js (parseBusSeqs); only the imports, the walking-point branch and the file loader were removed.
+     Data copied unchanged from data/area.migeum-snubh.json (OpenStreetMap roads, (c) OpenStreetMap contributors) and data/route.migeum-snubh.json (GBIS stop coordinates, points O2, O3, R3 trimmed to the fields used). No map service is called. */
+  const HSAREA = {"id":"area-migeum-snubh","title":"미금역과 분당서울대학교병원 사이 바깥 지도","source":"OpenStreetMap API 0.6 (map 호출과 way/469428749), tools/build_area_map.py로 한 번 내려받아 저장","licence":"© OpenStreetMap 기여자, ODbL 1.0 (openstreetmap.org/copyright)","retrieved":"2026-11-23","bbox":{"minLon":127.1055,"minLat":37.3465,"maxLon":127.127,"maxLat":37.3555},"note":"정류장 좌표는 이 파일에 없어요. 경로 자료(경기도 버스정보)의 값을 그대로 써요. 출구 좌표는 OpenStreetMap 기여자가 입력한 값이라 현장에서 확인하지 못했어요.","roads":[{"id":186410736,"highway":"primary","name":"돌마로","lanes":6,"pts":[[37.354256,127.118017],[37.355033,127.118661],[37.355201,127.118767],[37.35555,127.118924],[37.355973,127.119029],[37.356276,127.119068],[37.359174,127.119051]]},{"id":186410768,"highway":"primary","lanes":8,"pts":[[37.353347,127.117243],[37.354256,127.118017]]},{"id":277606822,"highway":"primary","name":"돌마로","lanes":6,"pts":[[37.35003,127.109014],[37.350035,127.113133],[37.350091,127.113722],[37.350182,127.114107],[37.350306,127.114405],[37.350403,127.114577],[37.350531,127.114781],[37.350621,127.11488],[37.350848,127.115111],[37.351048,127.115258]]},{"id":441623994,"highway":"primary","name":"돌마로","pts":[[37.350074,127.106358],[37.350076,127.104459],[37.350103,127.103806]]},{"id":481607850,"highway":"primary","name":"성남대로","lanes":8,"pts":[[37.359913,127.108045],[37.358674,127.108087],[37.358241,127.108143],[37.355296,127.108676],[37.354882,127.108713],[37.352387,127.108793],[37.35003,127.108823]]},{"id":522780985,"highway":"primary","name":"돌마로","lanes":6,"pts":[[37.351048,127.115258],[37.353347,127.117243]]},{"id":564521936,"highway":"primary","name":"성남대로","lanes":4,"pts":[[37.343437,127.109037],[37.35003,127.109014]]},{"id":929474805,"highway":"primary","name":"성남대로","lanes":4,"pts":[[37.354893,127.108876],[37.355341,127.108824],[37.358247,127.108347],[37.358751,127.108285],[37.359914,127.10823]]},{"id":942754565,"highway":"primary","name":"성남대로","lanes":8,"pts":[[37.35003,127.108823],[37.343559,127.108833]]},{"id":942754566,"highway":"primary","name":"돌마로","lanes":6,"pts":[[37.350072,127.106508],[37.35003,127.108823]]},{"id":942754567,"highway":"primary","name":"성남대로","lanes":4,"pts":[[37.35003,127.109014],[37.353679,127.108938],[37.354893,127.108876]]},{"id":942754568,"highway":"primary","name":"돌마로","lanes":6,"pts":[[37.35003,127.108823],[37.35003,127.109014]]},{"id":942754570,"highway":"primary","name":"돌마로","lanes":6,"pts":[[37.350074,127.106358],[37.350072,127.106508]]},{"id":157657207,"highway":"secondary","name":"금곡로","lanes":4,"pts":[[37.343559,127.108833],[37.343555,127.110923],[37.343466,127.111668],[37.343376,127.112084],[37.343195,127.112504],[37.342373,127.114865],[37.342265,127.115222],[37.3422,127.115649],[37.342184,127.116428],[37.342222,127.116771],[37.342329,127.117319],[37.342489,127.117789],[37.342792,127.118345],[37.342967,127.118591],[37.343205,127.118845],[37.343503,127.119093],[37.344048,127.11941],[37.344613,127.119574],[37.346282,127.119987],[37.346788,127.12008],[37.347291,127.120102],[37.350509,127.120071],[37.35114,127.119815],[37.351496,127.119602],[37.351886,127.119226],[37.352188,127.118822],[37.352968,127.117479],[37.35399,127.11559],[37.354995,127.113801],[37.356365,127.111219],[37.356476,127.110856],[37.356552,127.110327],[37.356623,127.109543],[37.356598,127.107043],[37.356622,127.104452]]},{"id":186410760,"highway":"secondary","name":"미금로","lanes":6,"pts":[[37.353384,127.104453],[37.353411,127.109898],[37.353388,127.110429],[37.353361,127.110631],[37.353256,127.111021],[37.353068,127.111435],[37.352676,127.112145],[37.351048,127.115258]]},{"id":522780984,"highway":"secondary","name":"미금로","lanes":6,"pts":[[37.351048,127.115258],[37.350756,127.115606],[37.350498,127.115843],[37.350369,127.115932],[37.350135,127.116011],[37.34743,127.116063],[37.341939,127.116099]]},{"id":154475603,"highway":"tertiary","name":"정자일로","lanes":4,"pts":[[37.350074,127.106358],[37.35102,127.106339],[37.35142,127.106303]]},{"id":232197945,"highway":"tertiary","pts":[[37.350509,127.120071],[37.35052,127.120229]]},{"id":258302892,"highway":"tertiary","name":"미금일로","lanes":2,"pts":[[37.350074,127.106358],[37.349694,127.106336],[37.349187,127.10638],[37.348801,127.106579],[37.348192,127.107017],[37.34796,127.107135],[37.347754,127.107203],[37.34762,127.107229],[37.346191,127.107226],[37.346098,127.107258],[37.345943,127.107392],[37.345861,127.107568],[37.345835,127.107701],[37.345841,127.108839]]},{"id":258303234,"highway":"tertiary","name":"성남대로143번길","lanes":2,"pts":[[37.348686,127.106672],[37.348695,127.108835]]},{"id":380075422,"highway":"tertiary","name":"구미로173번길","pts":[[37.350614,127.121601],[37.350656,127.122283],[37.350557,127.122733],[37.35043,127.123007],[37.350209,127.123341],[37.350109,127.123448],[37.349846,127.123634],[37.34944,127.123756],[37.344985,127.12457],[37.344443,127.124859],[37.343405,127.126038]]},{"id":465642912,"highway":"tertiary","name":"돌마로90번길","lanes":2,"pts":[[37.348704,127.112032],[37.350036,127.112023]]},{"id":465642914,"highway":"tertiary","name":"성남대로172번길","lanes":2,"pts":[[37.350036,127.112023],[37.350924,127.112025],[37.351337,127.11122],[37.351372,127.111064],[37.351373,127.10897]]},{"id":465642916,"highway":"tertiary","name":"성남대로144번길","lanes":2,"pts":[[37.348704,127.112032],[37.348697,127.109023]]},{"id":466392768,"highway":"tertiary","pts":[[37.35052,127.120229],[37.350614,127.121601]]},{"id":622355409,"highway":"tertiary","name":"성남대로171번길","lanes":2,"pts":[[37.351299,127.106317],[37.351314,127.108794]]},{"id":622355410,"highway":"tertiary","name":"정자일로","lanes":4,"pts":[[37.35142,127.106303],[37.352507,127.106035],[37.353392,127.105992],[37.359893,127.105996],[37.371387,127.105929],[37.372446,127.105942]]},{"id":784155817,"highway":"tertiary","name":"미금일로70번길","lanes":2,"pts":[[37.345847,127.112044],[37.348704,127.112032]]}],"exits":[{"ref":"1","id":3406781697,"lat":37.3505193,"lon":127.1091442},{"ref":"2","id":3406781696,"lat":37.3501993,"lon":127.1095499},{"ref":"3","id":3406781700,"lat":37.3498385,"lon":127.1095547},{"ref":"4","id":3406781701,"lat":37.3495208,"lon":127.1091457},{"ref":"5","id":3406781694,"lat":37.349439,"lon":127.1085991},{"ref":"6","id":3406781695,"lat":37.3498124,"lon":127.1082055},{"ref":"7","id":3406783591,"lat":37.350176,"lon":127.1082156},{"ref":"8","id":3406781698,"lat":37.3505183,"lon":127.1086683}],"hospital":{"wayId":469428749,"name":"분당 서울대학교병원","outline":[[37.3520476,127.1223408],[37.3515429,127.1223365],[37.3515416,127.1228913],[37.3515454,127.1230019],[37.3514261,127.1230068],[37.3514243,127.1234325],[37.3515547,127.1234365],[37.3515363,127.1234658],[37.3515246,127.123496],[37.351506,127.1236196],[37.3514895,127.1236829],[37.3514645,127.1237422],[37.3514434,127.1237688],[37.3514194,127.1237918],[37.3513881,127.1238144],[37.3513532,127.1238247],[37.3510876,127.1238208],[37.3508755,127.1238118],[37.3508362,127.1238126],[37.3508117,127.12382],[37.3507939,127.123833],[37.3507669,127.1238575],[37.3506872,127.1239294],[37.3506151,127.123997],[37.3505986,127.1240123],[37.3505765,127.1240124],[37.3505547,127.1239986],[37.3505369,127.1239768],[37.3505,127.1239021],[37.3504796,127.1238657],[37.3504506,127.123844],[37.3504172,127.1238435],[37.3501891,127.1238907],[37.3502234,127.1240765],[37.3503777,127.1240535],[37.3504116,127.1241252],[37.3502275,127.1242166],[37.3500693,127.1241819],[37.3498243,127.1241223],[37.3497156,127.1240962],[37.349512,127.1240953],[37.3493238,127.1240886],[37.3491501,127.1241388],[37.3490669,127.1241665],[37.3490277,127.1241834],[37.349009,127.1242101],[37.3489894,127.1242582],[37.3489191,127.1245991],[37.3489884,127.1246389],[37.3490528,127.1243411],[37.3493475,127.124327],[37.3496487,127.1243311],[37.3499569,127.1243384],[37.3501991,127.1243421],[37.3502538,127.1243173],[37.3504556,127.1242238],[37.3505042,127.1243143],[37.3504712,127.1243509],[37.3505457,127.1245026],[37.3505549,127.124496],[37.3505831,127.1245434],[37.3506085,127.1245187],[37.3506657,127.1246287],[37.3507822,127.1247708],[37.3510945,127.1244735],[37.3516543,127.1244848],[37.3516968,127.1241615],[37.3516046,127.1240602],[37.3518349,127.1240678],[37.3518343,127.124008],[37.3519598,127.1240123],[37.3520917,127.1240227],[37.3522439,127.1240983],[37.3522815,127.1239462],[37.3522609,127.1239343],[37.3524078,127.1234844],[37.3524074,127.1233699],[37.3524653,127.1233689],[37.352454,127.1230926],[37.3523537,127.1230866]]}};
+  const HSROUTE = {"points":[{"id":"O2","arrival":{"stationId":206000852,"routeId":241222004,"routeName":"7-1","loopStops":7,"boardSeq":1},"boardCoord":{"lat":37.3498833,"lon":127.1102333}},{"id":"O3","busRoute":{"routeName":"7-1","routeId":241222004,"stops":[{"seq":1,"id":206000852,"name":"미금역3번출구(마을)","lat":37.3498833,"lon":127.1102333},{"seq":2,"id":206000328,"name":"대원사거리.까치마을","lat":37.3517,"lon":127.1160333},{"seq":3,"id":206000724,"name":"서울대학교병원","lat":37.3505167,"lon":127.1219333},{"seq":4,"id":206000261,"name":"서울대병원","lat":37.3513667,"lon":127.12375}],"alightSeq":4},"alightCoord":{"lat":37.3513667,"lon":127.12375}},{"id":"R3","busRoute":{"routeName":"7-1","routeId":241222004,"stops":[{"seq":4,"id":206000261,"name":"서울대병원","lat":37.3513667,"lon":127.12375},{"seq":5,"id":206000723,"name":"서울대학교병원","lat":37.35075,"lon":127.1219333},{"seq":6,"id":206000177,"name":"청솔마을.주공9단지.동아아파트","lat":37.3518833,"lon":127.1157333},{"seq":7,"id":206000272,"name":"미금역.농협.2001아울렛","lat":37.3501833,"lon":127.1105}],"alightSeq":7}}]};
+  const HSM = (() => {
+const STOP_MAX_ACCURACY_M = 80; // fixes less precise than this are ignored
+const STOP_EARLY_M = 60; // within this of the stop before the alight stop: "do not get off yet"
+const STOP_NEAR_M = 130; // within this of the alight stop: get ready (shorter than the stop gap)
+const STOP_NOW_M = 50; // within this of the alight stop: get off
+const LEVELS = ['far', 'early', 'near', 'now'];
+const EARTH_RADIUS_M = 6371008.8;
+const RAD_A = Math.PI / 180;
+/** Great-circle distance in metres between two {lat, lon} points. */
+function haversineMeters(a, b) {
+  const dLat = (b.lat - a.lat) * RAD_A;
+  const dLon = (b.lon - a.lon) * RAD_A;
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(a.lat * RAD_A) * Math.cos(b.lat * RAD_A) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** The alight stop and the stop before it, from a busRoute ({stops, alightSeq}). */
+function routeStops(busRoute) {
+  const stops = busRoute.stops;
+  const i = stops.findIndex((st) => st.seq === busRoute.alightSeq);
+  return { alight: stops[i], prev: i > 0 ? stops[i - 1] : null };
+}
+
+/** Sentence for the 'early' level, built from the name of the stop before the alight stop. */
+function earlyText(stopName) {
+  return `여기는 ${stopName} 정류장이에요. 아직 내리지 마세요. 다음 정류장에서 내리세요.`;
+}
+
+/**
+ * Stop-aware level for one fix {lat, lon, accuracy}: 'now' within 50 m of the alight stop, 'near'
+ * within 130 m of it, 'early' within 60 m of the stop before it. Fixes with accuracy over 80 m are
+ * ignored and levels only move forward (far < early < near < now; 'early' may be skipped).
+ */
+function stopAlertLevel(pos, busRoute, prevLevel = 'far') {
+  const prev = LEVELS.includes(prevLevel) ? prevLevel : 'far';
+  if (Number.isFinite(pos.accuracy) && pos.accuracy > STOP_MAX_ACCURACY_M) return prev;
+  const { alight, prev: before } = routeStops(busRoute);
+  const dAlight = haversineMeters(pos, alight);
+  if (!Number.isFinite(dAlight)) return prev;
+  let raw = 'far';
+  if (dAlight <= STOP_NOW_M) raw = 'now';
+  else if (dAlight <= STOP_NEAR_M) raw = 'near';
+  else if (before && haversineMeters(pos, before) <= STOP_EARLY_M) raw = 'early';
+  return LEVELS.indexOf(raw) > LEVELS.indexOf(prev) ? raw : prev;
+}
+
+const num = (v) => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+// Outdoor map between Migeum station and the hospital. Pure functions (data checks, projection,
+// geometry, riding progress, the SVG string) importable in Node. The map data is one stored file
+// (data/area.migeum-snubh.json, built once from OpenStreetMap by tools/build_area_map.py); the app
+// never calls a map service while running, so the phone's position stays on the phone.
+// Bus stop coordinates are NOT in that file: they come from the route data (official GBIS values).
+//
+// Follows the floor plan's pattern (floor.js): one rotation about the centre so the heading points up
+// (0 means north up, quantised by compass.js quantiseHeading before it gets here), one uniform scale,
+// every label placed by computed coordinates and kept upright (no rotate transform anywhere).
+
+
+const AREA_ATTRIBUTION = '지도 © OpenStreetMap 기여자';
+const AREA_CAPTION = '대략적인 위치예요. 걷는 길이 아니라 직선이에요.';
+const AREA_SIZE = Object.freeze({ width: 360, height: 300 });
+const ROAD_CLASSES = Object.freeze(['primary', 'secondary', 'tertiary']);
+// Roads a walker should not be sent across with a straight arrow.
+const MAJOR_CLASSES = Object.freeze(['primary', 'secondary']);
+const AT_STOP_M = 60; // within this of a route stop: "at the stop"
+const OFF_ROUTE_M = 400; // farther than this from the stop-to-stop line (and any stop): no progress claim
+const EXITS_MIN_SCALE = 0.45; // px per metre; zoomed out further than this, exit numbers are hidden
+
+const EARTH_R = 6371008.8; // same radius as haversineMeters
+const RAD = Math.PI / 180;
+const norm360 = (deg) => ((deg % 360) + 360) % 360;
+const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const isFix = (p) => Boolean(p) && isNum(p.lat) && isNum(p.lon);
+const f1 = (v) => Number(v).toFixed(1);
+const escapeXml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------------------------------------------------------------- data
+
+/** All stops of the loop, one per seq, from the route's busRoute blocks (the official GBIS values). */
+function loopStops(route) {
+  const bySeq = new Map();
+  for (const p of route.points) {
+    if (!p.busRoute) continue;
+    for (const st of p.busRoute.stops) if (!bySeq.has(st.seq)) bySeq.set(st.seq, { ...st });
+  }
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+}
+
+/** Short stop name for a map label: the part before the first "." and any "(...)" dropped. */
+function shortStopName(name) {
+  const first = String(name).split('.')[0].replace(/\(.*?\)/g, '').trim();
+  return first || String(name);
+}
+
+// ---------------------------------------------------------------- projection and geometry
+
+/** Local flat projection about `origin` ({lat, lon}): east/north metres. */
+function toLocal(origin, p) {
+  const mLat = EARTH_R * RAD;
+  const mLon = mLat * Math.cos(origin.lat * RAD);
+  return { x: (p.lon - origin.lon) * mLon, y: (p.lat - origin.lat) * mLat };
+}
+
+/** Does segment a-b cross segment c-d? Points are {x, y}. Touching at an end counts as crossing. */
+function segmentsCross(a, b, c, d) {
+  const o = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const o1 = o(a, b, c);
+  const o2 = o(a, b, d);
+  const o3 = o(c, d, a);
+  const o4 = o(c, d, b);
+  if (((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0))) return true;
+  const within = (p, q, r) => Math.min(p.x, q.x) <= r.x && r.x <= Math.max(p.x, q.x) && Math.min(p.y, q.y) <= r.y && r.y <= Math.max(p.y, q.y);
+  return (o1 === 0 && within(a, b, c)) || (o2 === 0 && within(a, b, d)) || (o3 === 0 && within(c, d, a)) || (o4 === 0 && within(c, d, b));
+}
+
+/**
+ * The major roads (primary, secondary) a straight line from `a` to `b` crosses, as [{id, name, highway}].
+ * An empty list means the arrow would not send a walker across a big road.
+ */
+function majorRoadCrossings(area, a, b) {
+  const origin = { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
+  const A = toLocal(origin, a);
+  const B = toLocal(origin, b);
+  const out = [];
+  for (const r of area.roads) {
+    if (!MAJOR_CLASSES.includes(r.highway)) continue;
+    const pts = r.pts.map(([lat, lon]) => toLocal(origin, { lat, lon }));
+    let hit = false;
+    for (let i = 0; i + 1 < pts.length && !hit; i += 1) hit = segmentsCross(A, B, pts[i], pts[i + 1]);
+    if (hit) out.push({ id: r.id, name: r.name || null, highway: r.highway });
+  }
+  return out;
+}
+
+/** Smallest distance in metres from the line a-b to any major road vertex or edge (for margin checks). */
+function majorRoadClearanceM(area, a, b) {
+  const origin = { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
+  const A = toLocal(origin, a);
+  const B = toLocal(origin, b);
+  const segDist = (p, s, e) => {
+    const dx = e.x - s.x;
+    const dy = e.y - s.y;
+    const L2 = dx * dx + dy * dy;
+    const t = L2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - s.x) * dx + (p.y - s.y) * dy) / L2));
+    return Math.hypot(p.x - (s.x + t * dx), p.y - (s.y + t * dy));
+  };
+  let best = Infinity;
+  for (const r of area.roads) {
+    if (!MAJOR_CLASSES.includes(r.highway)) continue;
+    const pts = r.pts.map(([lat, lon]) => toLocal(origin, { lat, lon }));
+    for (let i = 0; i + 1 < pts.length; i += 1) {
+      // distance between two segments = min of the four endpoint-to-segment distances (they do not cross)
+      best = Math.min(best, segDist(pts[i], A, B), segDist(pts[i + 1], A, B), segDist(A, pts[i], pts[i + 1]), segDist(B, pts[i], pts[i + 1]));
+    }
+  }
+  return best;
+}
+
+/**
+ * Geometry of the map: heading up (`headingDeg` null means north up), one uniform scale that fits the
+ * bounding box of `points` (at least `minSpanM` metres across) into the drawing box, centred.
+ * Returns {at(lat, lon) -> {x, y} (SVG units, y down), scale (px per metre), northAngle, headingUsed}.
+ */
+function areaGeometry({ points, headingDeg = null, size = AREA_SIZE, margin = 34, minSpanM = 200 }) {
+  const pts = points.filter(isFix);
+  const lats = pts.map((p) => p.lat);
+  const lons = pts.map((p) => p.lon);
+  const origin = pts.length
+    ? { lat: (Math.min(...lats) + Math.max(...lats)) / 2, lon: (Math.min(...lons) + Math.max(...lons)) / 2 }
+    : { lat: 37.351, lon: 127.116 };
+  const headingUsed = Number.isFinite(headingDeg) ? norm360(headingDeg) : 0;
+  const theta = -headingUsed * RAD; // clockwise on screen (y down); heading -> up
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const rot = (p) => {
+    const q = toLocal(origin, p);
+    const vx = q.x;
+    const vy = -q.y; // north is up on the screen
+    return { x: vx * cos - vy * sin, y: vx * sin + vy * cos };
+  };
+  const r = pts.map(rot);
+  const x0 = r.length ? Math.min(...r.map((p) => p.x)) : 0;
+  const x1 = r.length ? Math.max(...r.map((p) => p.x)) : 0;
+  const y0 = r.length ? Math.min(...r.map((p) => p.y)) : 0;
+  const y1 = r.length ? Math.max(...r.map((p) => p.y)) : 0;
+  const spanX = Math.max(x1 - x0, minSpanM);
+  const spanY = Math.max(y1 - y0, minSpanM);
+  const scale = Math.min((size.width - 2 * margin) / spanX, (size.height - 2 * margin) / spanY);
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  const at = (lat, lon) => {
+    const q = rot({ lat, lon });
+    return { x: size.width / 2 + scale * (q.x - cx), y: size.height / 2 + scale * (q.y - cy) };
+  };
+  return { at, scale, northAngle: norm360(-headingUsed), headingUsed };
+}
+
+// ---------------------------------------------------------------- riding progress
+
+/**
+ * Progress along the stops of a ride. `stops` is the ordered list up to the alight stop (the route
+ * point's busRoute.stops), `alightSeq` the stop to get off at, `prev` the previous result (progress
+ * never goes backwards). A fix with accuracy over 80 m changes nothing. Returns null while unknown,
+ * else {lastIndex, atStop, nextIndex, remaining}: `lastIndex` is the last stop passed (or the stop the
+ * bus is at), `nextIndex` the stop ahead, `remaining` the number of stops until the alight stop (0 at it).
+ */
+function ridingProgress(pos, stops, alightSeq, prev = null) {
+  const alightIdx = stops.findIndex((s) => s.seq === alightSeq);
+  if (alightIdx < 0) return prev;
+  if (!isFix(pos)) return prev;
+  if (Number.isFinite(pos.accuracy) && pos.accuracy > STOP_MAX_ACCURACY_M) return prev;
+  const floor = prev ? prev.lastIndex : 0;
+  const make = (lastIndex, atStop) => {
+    const last = Math.min(Math.max(lastIndex, floor), alightIdx);
+    const at = atStop && last === lastIndex;
+    return { lastIndex: last, atStop: at, nextIndex: Math.min(last + 1, alightIdx), remaining: alightIdx - last };
+  };
+  // At a stop: the nearest stop at or after the last one passed, within 60 m.
+  let nearest = -1;
+  let nearestD = Infinity;
+  for (let i = floor; i <= alightIdx; i += 1) {
+    const d = haversineMeters(pos, stops[i]);
+    if (d < nearestD) { nearestD = d; nearest = i; }
+  }
+  if (nearest >= 0 && nearestD <= AT_STOP_M) return make(nearest, true);
+  // Between two stops: the straight stop-to-stop segment (at or after the last one passed) nearest to the fix.
+  let bestSeg = -1;
+  let bestD = Infinity;
+  for (let i = floor; i < alightIdx; i += 1) {
+    const origin = stops[i];
+    const P = toLocal(origin, pos);
+    const E = toLocal(origin, stops[i + 1]);
+    const L2 = E.x * E.x + E.y * E.y;
+    const t = L2 === 0 ? 0 : Math.max(0, Math.min(1, (P.x * E.x + P.y * E.y) / L2));
+    const d = Math.hypot(P.x - t * E.x, P.y - t * E.y);
+    if (d < bestD) { bestD = d; bestSeg = i; }
+  }
+  if (bestSeg < 0 || bestD > OFF_ROUTE_M) return prev;
+  return make(bestSeg, false);
+}
+
+/** "내릴 곳까지 3정거장" (the count of stops until the alight stop); "내릴 곳에 왔어요" at it. null when unknown. */
+function remainingText(progress) {
+  if (!progress) return null;
+  return progress.remaining <= 0 ? '내릴 곳에 왔어요' : `내릴 곳까지 ${progress.remaining}정거장`;
+}
+
+/** Name line under the count: "다음 정류장: 서울대학교병원" (null at the alight stop or when unknown). */
+function nextStopText(progress, stops) {
+  if (!progress || progress.remaining <= 0) return null;
+  const st = stops[progress.nextIndex];
+  return st ? `다음 정류장: ${shortStopName(st.name)}` : null;
+}
+
+// ---------------------------------------------------------------- scene for one route point
+
+/** Live buses as map markers: each loop seq to its official stop coordinate. */
+function busMarkers(route, seqs) {
+  const stops = loopStops(route);
+  const out = [];
+  for (const seq of seqs || []) {
+    const st = stops.find((s) => s.seq === seq);
+    if (st) out.push({ seq, lat: st.lat, lon: st.lon });
+  }
+  return out;
+}
+
+/**
+ * What to draw for route point `index`, or null when this point has no outdoor map.
+ *  walk (a point with `target`): me (a real fix, or in simulation the start), target, dashed line.
+ *  wait (a point with `arrival`): the loop stops, the boarding stop, live buses.
+ *  ride (a point with `busRoute`): the stops of the ride, me, passed/next/alight stops.
+ * `state`: {pos, sim, headingDeg, progress, busSeqs}.
+ */
+function sceneFor(route, area, index, { pos = null, sim = false, headingDeg = null, progress = null, busSeqs = [] } = {}) {
+  const p = route.points[index];
+  if (!p || !area) return null;
+  if (p.arrival) {
+    const loop = loopStops(route);
+    const board = p.boardCoord;
+    const buses = busMarkers(route, busSeqs);
+    const stops = loop.map((st) => ({ ...st, role: st.seq === p.arrival.boardSeq ? 'board' : 'stop' }));
+    const fit = [board, ...buses].filter(isFix);
+    return {
+      kind: 'wait',
+      opts: { stops, routeLine: loop, buses, fit, headingDeg: null, aria: `바깥 지도. 타는 정류장과 ${p.arrival.routeName}번 버스 위치.` },
+    };
+  }
+  if (p.busRoute) {
+    const ride = p.busRoute.stops.filter((st) => st.seq <= p.busRoute.alightSeq);
+    const stops = ride.map((st, i) => {
+      let role = 'stop';
+      if (st.seq === p.busRoute.alightSeq) role = 'alight';
+      else if (progress && i === progress.nextIndex) role = 'next';
+      else if (progress && i <= progress.lastIndex) role = 'passed';
+      return { ...st, role };
+    });
+    const me = isFix(pos) ? pos : null;
+    const fit = [...ride, me].filter(isFix);
+    return {
+      kind: 'ride',
+      opts: { stops, routeLine: ride, me, fit, headingDeg: null, aria: `바깥 지도. ${p.busRoute.routeName}번 버스가 지나는 정류장과 내 위치.` },
+      texts: { remaining: remainingText(progress), next: nextStopText(progress, ride) },
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- drawing
+
+const INK = '#111827';
+const LAND = '#f1f5f9';
+const BUILDING = '#cbd5e1';
+const ROAD_FILL = '#ffffff';
+const ROAD_EDGE = '#64748b';
+const ROUTE = '#7c3aed';
+const ME = '#2563eb';
+const TARGET = '#dc2626';
+const FONT = { label: 17, small: 14, road: 15 };
+
+const textW = (text, size) => [...String(text)].reduce((w, ch) => w + (/[ᄀ-ᇿ㄰-㆏가-힯]/.test(ch) ? size : size * 0.6), 0);
+
+/** Placed label boxes; `place` tries the candidate spots in order and keeps the first free one. */
+function labelPlacer(size, obstacles) {
+  const boxes = [...obstacles];
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  return {
+    place(text, ax, ay, r, fontSize, prefer = ['up', 'right', 'down', 'left']) {
+      const w = textW(text, fontSize) + 6;
+      const h = fontSize + 6;
+      const spots = prefer.map((side) => {
+        if (side === 'up') return { x: ax - w / 2, y: ay - r - 4 - h, anchor: 'middle' };
+        if (side === 'down') return { x: ax - w / 2, y: ay + r + 4, anchor: 'middle' };
+        if (side === 'left') return { x: ax - r - 5 - w, y: ay - h / 2, anchor: 'end' };
+        if (side === 'center') return { x: ax - w / 2, y: ay - h / 2, anchor: 'middle' };
+        return { x: ax + r + 5, y: ay - h / 2, anchor: 'start' };
+      });
+      let chosen = null;
+      for (const s of spots) {
+        const box = { x: Math.min(Math.max(s.x, 2), size.width - w - 2), y: Math.min(Math.max(s.y, 2), size.height - h - 2), w, h };
+        if (!boxes.some((b) => hit(box, b))) { chosen = { box, anchor: s.anchor }; break; }
+      }
+      if (!chosen) return null;
+      boxes.push(chosen.box);
+      const { box, anchor } = chosen;
+      const tx = anchor === 'middle' ? box.x + box.w / 2 : (anchor === 'end' ? box.x + box.w - 3 : box.x + 3);
+      return { x: tx, y: box.y + box.h / 2, anchor };
+    },
+  };
+}
+
+/**
+ * The longest stretch of a screen polyline that lies at least `inset` px inside the box: sampled every
+ * 4 px; returns {length (px), samples [{x, y}]} or null when no sample is inside.
+ */
+function longestVisibleRun(pts, size, inset) {
+  const inside = (q) => q.x > inset && q.x < size.width - inset && q.y > inset && q.y < size.height - inset;
+  let best = null;
+  let cur = [];
+  const close = () => {
+    if (cur.length && (!best || cur.length > best.samples.length)) best = { length: cur.length * 4, samples: cur };
+    cur = [];
+  };
+  for (let i = 0; i + 1 < pts.length; i += 1) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 4));
+    for (let k = 0; k < n; k += 1) {
+      const q = { x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n };
+      if (inside(q)) cur.push(q);
+      else close();
+    }
+  }
+  close();
+  return best;
+}
+
+function haloText(text, pos, { size, weight = 800, fill = INK, attrs = '' }) {
+  return `<text ${attrs} x="${f1(pos.x)}" y="${f1(pos.y)}" dy="0.35em" text-anchor="${pos.anchor}" font-size="${size}" font-weight="${weight}" `
+    + `fill="${fill}" stroke="#fff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${escapeXml(text)}</text>`;
+}
+
+/**
+ * The outdoor map as one HTML string: a figure with an inline SVG and the attribution caption.
+ * `opts`: {me {lat, lon, accuracy}, target {lat, lon, label}, line, stops [{seq, name, lat, lon, role}],
+ * routeLine [{lat, lon}], buses [{lat, lon}], fit [{lat, lon}], headingDeg, aria}. Stop circles carry
+ * data-seq/data-lat/data-lon and exit circles data-ref/data-lat/data-lon, so the picture can be
+ * checked against the route data and the stored OpenStreetMap values.
+ */
+function renderAreaMap(area, opts = {}) {
+  const size = AREA_SIZE;
+  const stops = opts.stops || [];
+  const buses = opts.buses || [];
+  const fitPts = (opts.fit && opts.fit.length ? opts.fit : [opts.me, opts.target, ...stops, ...buses]).filter(isFix);
+  const geo = areaGeometry({ points: fitPts, headingDeg: opts.headingDeg ?? null, size });
+  const P = (o) => geo.at(o.lat, o.lon);
+  const parts = [];
+  const inView = (pt, m = 40) => pt.x > -m && pt.x < size.width + m && pt.y > -m && pt.y < size.height + m;
+  const polyBox = (pts) => {
+    const xs = pts.map((q) => q.x);
+    const ys = pts.map((q) => q.y);
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  };
+  const overlapsView = (pts) => {
+    const b = polyBox(pts);
+    return b.x1 > -40 && b.x0 < size.width + 40 && b.y1 > -40 && b.y0 < size.height + 40;
+  };
+  const pointsAttr = (pts) => pts.map((q) => `${f1(q.x)},${f1(q.y)}`).join(' ');
+
+  parts.push(`<rect x="0" y="0" width="${size.width}" height="${size.height}" fill="${LAND}"/>`);
+
+  // hospital building
+  const hosp = area.hospital.outline.map(([lat, lon]) => geo.at(lat, lon));
+  if (overlapsView(hosp)) {
+    parts.push(`<polygon data-hospital="1" points="${pointsAttr(hosp)}" fill="${BUILDING}" stroke="#94a3b8" stroke-width="1.5" stroke-linejoin="round"/>`);
+  }
+
+  // roads: small ones first, big ones on top
+  const roadOrder = { tertiary: 0, secondary: 1, primary: 2 };
+  const roads = [...area.roads].sort((a, b) => roadOrder[a.highway] - roadOrder[b.highway]);
+  const roadScreen = new Map();
+  for (const r of roads) {
+    const pts = r.pts.map(([lat, lon]) => geo.at(lat, lon));
+    if (!overlapsView(pts)) continue;
+    roadScreen.set(r, pts);
+    const widthM = (r.lanes || 2) * 3.5;
+    const w = Math.min(14, Math.max(3.5, geo.scale * widthM));
+    parts.push(`<polyline data-road="${r.id}" points="${pointsAttr(pts)}" fill="none" stroke="${ROAD_EDGE}" stroke-width="${f1(w + 3)}" stroke-linecap="round" stroke-linejoin="round"/>`);
+  }
+  for (const [r, pts] of roadScreen) {
+    const widthM = (r.lanes || 2) * 3.5;
+    const w = Math.min(14, Math.max(3.5, geo.scale * widthM));
+    parts.push(`<polyline points="${pointsAttr(pts)}" fill="none" stroke="${ROAD_FILL}" stroke-width="${f1(w)}" stroke-linecap="round" stroke-linejoin="round"/>`);
+  }
+  // The edges of all roads first and the fills after: crossings read as junctions, not as bridges.
+
+  // bus route line
+  if (opts.routeLine && opts.routeLine.length > 1) {
+    parts.push(`<polyline data-route-line="1" points="${pointsAttr(opts.routeLine.map(P))}" fill="none" stroke="${ROUTE}" stroke-width="5" stroke-dasharray="2 8" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>`);
+  }
+
+  // walk line: me -> target
+  const me = isFix(opts.me) ? P(opts.me) : null;
+  const tgt = isFix(opts.target) ? P(opts.target) : null;
+  if (opts.line && me && tgt) {
+    parts.push(`<line data-walk-line="1" x1="${f1(me.x)}" y1="${f1(me.y)}" x2="${f1(tgt.x)}" y2="${f1(tgt.y)}" stroke="${INK}" stroke-width="4.5" stroke-dasharray="9 7" stroke-linecap="butt"/>`);
+  }
+
+  // accuracy ring (kept readable: at most 70 px)
+  if (me && Number.isFinite(opts.me.accuracy)) {
+    const rr = Math.min(70, Math.max(0, opts.me.accuracy * geo.scale));
+    if (rr > 12) parts.push(`<circle data-accuracy="1" cx="${f1(me.x)}" cy="${f1(me.y)}" r="${f1(rr)}" fill="${ME}" fill-opacity="0.15" stroke="${ME}" stroke-opacity="0.5" stroke-width="1.5"/>`);
+  }
+
+  const obstacles = [];
+  const circles = [];
+  const labels = [];
+
+  // station exits
+  const showExits = geo.scale >= EXITS_MIN_SCALE;
+  const exitPts = area.exits.map((e) => ({ e, q: geo.at(e.lat, e.lon) }));
+  for (const { e, q } of exitPts) {
+    const isTarget = tgt && Math.hypot(q.x - tgt.x, q.y - tgt.y) < 4;
+    if (!showExits || !inView(q, 0) || isTarget) continue;
+    circles.push(`<circle data-exit="1" data-ref="${escapeXml(e.ref)}" data-lat="${e.lat}" data-lon="${e.lon}" cx="${f1(q.x)}" cy="${f1(q.y)}" r="10" fill="#fff" stroke="${INK}" stroke-width="2.5"/>`
+      + `<text x="${f1(q.x)}" y="${f1(q.y)}" dy="0.35em" text-anchor="middle" font-size="13" font-weight="900" fill="${INK}">${escapeXml(e.ref)}</text>`);
+    obstacles.push({ x: q.x - 11, y: q.y - 11, w: 22, h: 22 });
+  }
+
+  // stops
+  const stopDraw = [];
+  for (const st of stops) {
+    const q = P(st);
+    if (!inView(q, 10)) continue;
+    const role = st.role || 'stop';
+    const fill = { passed: '#94a3b8', next: '#fde047', alight: '#fb923c', board: '#6ee7b7', stop: '#fff' }[role] || '#fff';
+    const r = role === 'alight' || role === 'next' || role === 'board' ? 10 : 7.5;
+    circles.push(`<circle data-stop="1" data-seq="${st.seq}" data-lat="${st.lat}" data-lon="${st.lon}" data-role="${role}" cx="${f1(q.x)}" cy="${f1(q.y)}" r="${r}" fill="${fill}" stroke="${INK}" stroke-width="${role === 'stop' || role === 'passed' ? 2.5 : 3.5}"/>`);
+    obstacles.push({ x: q.x - r - 2, y: q.y - r - 2, w: 2 * r + 4, h: 2 * r + 4 });
+    stopDraw.push({ st, q, r, role });
+  }
+
+  // buses
+  const busDraw = [];
+  for (const b of buses) {
+    const q = P(b);
+    if (!inView(q, 10)) continue;
+    circles.push(`<g data-bus="1" data-seq="${b.seq ?? ''}"><rect x="${f1(q.x - 17)}" y="${f1(q.y - 24)}" width="34" height="20" rx="6" fill="${ME}" stroke="#fff" stroke-width="2.5"/>`
+      + `<text x="${f1(q.x)}" y="${f1(q.y - 14)}" dy="0.35em" text-anchor="middle" font-size="13" font-weight="900" fill="#fff">버스</text></g>`);
+    obstacles.push({ x: q.x - 18, y: q.y - 26, w: 36, h: 24 });
+    busDraw.push(q);
+  }
+
+  // target
+  if (tgt) {
+    circles.push(`<g data-target="1"><circle cx="${f1(tgt.x)}" cy="${f1(tgt.y)}" r="16" fill="none" stroke="${TARGET}" stroke-width="3.5"/>`
+      + `<circle cx="${f1(tgt.x)}" cy="${f1(tgt.y)}" r="7" fill="${TARGET}" stroke="#fff" stroke-width="2.5"/></g>`);
+    obstacles.push({ x: tgt.x - 18, y: tgt.y - 18, w: 36, h: 36 });
+  }
+
+  // me (on top): a dot, with a small wedge pointing up when the map is turned to the heading
+  if (me) {
+    const wedge = opts.headingDeg !== null && opts.headingDeg !== undefined
+      ? `<polygon points="${f1(me.x)},${f1(me.y - 19)} ${f1(me.x - 7)},${f1(me.y - 8)} ${f1(me.x + 7)},${f1(me.y - 8)}" fill="${ME}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>`
+      : '';
+    circles.push(`<g data-me="1">${wedge}<circle cx="${f1(me.x)}" cy="${f1(me.y)}" r="9" fill="${ME}" stroke="#fff" stroke-width="3.5"/></g>`);
+    obstacles.push({ x: me.x - 12, y: me.y - 22, w: 24, h: 34 });
+  }
+
+  // labels, most important first
+  const placer = labelPlacer(size, obstacles);
+  if (tgt && opts.target.label) {
+    const pos = placer.place(opts.target.label, tgt.x, tgt.y, 16, FONT.label, ['up', 'down', 'right', 'left']);
+    if (pos) labels.push(haloText(opts.target.label, pos, { size: FONT.label, fill: TARGET, attrs: 'data-label="target"' }));
+  }
+  const roleText = { alight: '내릴 곳', next: '다음', board: '타는 곳' };
+  for (const role of ['alight', 'next', 'board']) {
+    for (const d of stopDraw.filter((x) => x.role === role)) {
+      const text = `${roleText[role]} ${shortStopName(d.st.name)}`;
+      const pos = placer.place(text, d.q.x, d.q.y, d.r, FONT.label, ['up', 'down', 'right', 'left']);
+      if (pos) labels.push(haloText(text, pos, { size: FONT.label, attrs: `data-label="${role}"` }));
+    }
+  }
+  // road names: once per name, on the middle of the longest stretch that lies inside the view
+  const named = new Map();
+  for (const [r, pts] of roadScreen) {
+    if (!r.name || !MAJOR_CLASSES.includes(r.highway)) continue;
+    const run = longestVisibleRun(pts, size, 30);
+    if (!run) continue;
+    const prev = named.get(r.name);
+    if (!prev || run.length > prev.length) named.set(r.name, run);
+  }
+  for (const [name, run] of named) {
+    const mid = run.samples[Math.floor(run.samples.length / 2)];
+    const pos = placer.place(name, mid.x, mid.y, 0, FONT.road, ['center', 'up', 'down']);
+    if (pos) labels.push(haloText(name, pos, { size: FONT.road, weight: 700, fill: '#475569', attrs: 'data-label="road"' }));
+  }
+  // the station name when exit numbers are hidden or elsewhere on the map
+  const stationPts = exitPts.map((x) => x.q).filter((q) => inView(q, 0));
+  if (stationPts.length) {
+    const cx = stationPts.reduce((a, q) => a + q.x, 0) / stationPts.length;
+    const cy = stationPts.reduce((a, q) => a + q.y, 0) / stationPts.length;
+    const pos = placer.place('미금역', cx, cy, showExits ? 22 : 6, FONT.label, ['down', 'up', 'right', 'left']);
+    if (pos) labels.push(haloText('미금역', pos, { size: FONT.label, weight: 900, attrs: 'data-label="station"' }));
+  }
+  const hospIn = hosp.filter((q) => inView(q, -10));
+  if (hospIn.length >= 3) {
+    const cx = hospIn.reduce((a, q) => a + q.x, 0) / hospIn.length;
+    const cy = hospIn.reduce((a, q) => a + q.y, 0) / hospIn.length;
+    const pos = placer.place('병원', cx, cy, 0, FONT.label, ['center', 'up', 'down']);
+    if (pos) labels.push(haloText('병원', pos, { size: FONT.label, weight: 900, fill: '#475569', attrs: 'data-label="hospital"' }));
+  }
+
+  parts.push(...circles, ...labels);
+
+  // north marker (upright; needle placed by computed coordinates)
+  const nc = { x: size.width - 24, y: 24 };
+  const nr = (geo.northAngle * Math.PI) / 180;
+  const nd = { x: Math.sin(nr), y: -Math.cos(nr) };
+  const np = { x: -nd.y, y: nd.x };
+  const at = (along, side) => `${f1(nc.x + nd.x * along + np.x * side)},${f1(nc.y + nd.y * along + np.y * side)}`;
+  parts.push(`<circle data-north-disc="1" cx="${f1(nc.x)}" cy="${f1(nc.y)}" r="17" fill="#fff" fill-opacity="0.92" stroke="#94a3b8" stroke-width="1.5"/>`
+    + `<polygon data-north-needle="1" points="${at(11, 0)} ${at(-7, 6)} ${at(-2, 0)} ${at(-7, -6)}" fill="${INK}" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>`
+    + `<text data-north-label="1" x="${f1(nc.x - 17 - 12)}" y="${f1(nc.y)}" dy="0.35em" text-anchor="middle" font-size="${FONT.label}" font-weight="900" fill="${INK}" stroke="#fff" stroke-width="4" paint-order="stroke">북</text>`);
+
+  const aria = opts.aria || '바깥 지도';
+  const svg = `<svg class="area-svg" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="${escapeXml(aria)}" `
+    + `xmlns="http://www.w3.org/2000/svg" focusable="false">${parts.join('')}</svg>`;
+  const upNote = opts.headingDeg === null || opts.headingDeg === undefined ? '위쪽이 북쪽이에요.' : '위쪽이 바라보는 쪽이에요.';
+  return `<figure class="area-map" id="area-map" data-up="${opts.headingDeg === null || opts.headingDeg === undefined ? 'north' : 'heading'}">${svg}`
+    + `<figcaption class="area-caption" id="area-caption">${escapeXml(upNote)} ${escapeXml(AREA_CAPTION)} ${escapeXml(AREA_ATTRIBUTION)}</figcaption></figure>`;
+}
+
+/**
+ * Where the buses are on the loop: the stop numbers (stationSeq 1..loopStops) of every bus in the
+ * reply, sorted and without repeats; [] when there is none or the reply is unusable. Used to draw the
+ * buses on the map, next to parseLocations() which only keeps the distance to the boarding stop.
+ */
+function parseBusSeqs(reply, { loopStops } = {}) {
+  if (!Number.isInteger(loopStops) || loopStops < 1) return [];
+  const root = reply && typeof reply === 'object' ? (reply.response || reply) : null;
+  if (!root) return [];
+  const body = root.msgBody && typeof root.msgBody === 'object' ? root.msgBody : null;
+  let list = body ? body.busLocationList : root.busLocationList;
+  if (list && !Array.isArray(list)) list = [list];
+  if (!Array.isArray(list)) return [];
+  const seqs = new Set();
+  for (const bus of list) {
+    if (!bus || typeof bus !== 'object') continue;
+    const seq = num(bus.stationSeq);
+    if (seq !== null && Number.isInteger(seq) && seq >= 1 && seq <= loopStops) seqs.add(seq);
+  }
+  return [...seqs].sort((a, b) => a - b);
+}
+
+return { AREA_ATTRIBUTION, renderAreaMap, sceneFor, ridingProgress, remainingText, nextStopText, stopAlertLevel, earlyText, routeStops, haversineMeters, parseBusSeqs, shortStopName, busMarkers, loopStops };
+  })();
+  // glue (this app's own code): mounts the map on the default 7-1 steps, runs the stop-order ride tracker
+  HS.BOARD = { stationId: 206000852, routeId: 241222004 };
+  HS.isDefault = (s) => !!s && !!s.bus && isPreset() && Number(s.bus.stationId) === HS.BOARD.stationId && Number(s.bus.routeId) === HS.BOARD.routeId;
+  HS.rideFor = (s) => HS.isDefault(s) && s.type === "bus" && !busRealtime();
+  HS.busSeqs = [];
+  HS.ride = { prog: null, level: "far", timer: null, step: null };
+  HS.rideStops = () => { const br = HSROUTE.points[1].busRoute; return br.stops.filter(st => st.seq <= br.alightSeq); };
+  HS.fix = () => nav.pos ? { lat: nav.pos.lat, lon: nav.pos.lng, accuracy: nav.acc } : null;
+  HS.levelText = (lv) => {
+    const br = HSROUTE.points[1].busRoute, { alight, prev } = HSM.routeStops(br);
+    if (lv === "early") return HSM.earlyText(HSM.shortStopName(prev.name));
+    if (lv === "near") return `다음 정류장, ${HSM.shortStopName(alight.name)}에서 내려요. 하차 벨을 눌러 주세요.`;
+    if (lv === "now") return "이번 정류장에서 내리세요. 서두르지 마시고 천천히 내리세요.";
+    return "";
+  };
+  HS.paintMap = (step) => {
+    const host = $("#hsMapBody"); if (!host || !step) return;
+    const R = HS.ride, p = HS.fix(), board = HSROUTE.points[0].boardCoord;
+    const waiting = step.type !== "bus" || (p && HSM.haversineMeters(p, board) <= 150 && (!R.prog || R.prog.lastIndex === 0));
+    const sc = waiting ? HSM.sceneFor(HSROUTE, HSAREA, 0, { busSeqs: HS.busSeqs }) : HSM.sceneFor(HSROUTE, HSAREA, 1, { pos: p, progress: R.prog });
+    if (!sc) return;
+    host.innerHTML = HSM.renderAreaMap(HSAREA, sc.opts);
+    const info = $("#hsMapInfo"); if (!info) return;
+    if (waiting) {
+      const n = HS.busSeqs.length;
+      info.innerHTML = step.type === "bus" ? "" : `<p class="bus-row">${n ? `지도의 <b>버스</b> 표시는 지금 ${esc(HS.ARR.routeName)}번 버스가 있는 정류장이에요.` : "버스 위치를 받으면 지도에 버스가 표시돼요."}</p>`;
+      return;
+    }
+    const lv = R.level, rem = HSM.remainingText(R.prog), nxt = R.prog ? HSM.nextStopText(R.prog, HS.rideStops()) : null;
+    info.innerHTML = (lv !== "far" ? `<p class="ride-left" style="${lv === "early" ? "color:#b45309" : ""}">${lv === "early" ? "⚠️ 아직 내리지 마세요" : lv === "near" ? "🔔 다음 정류장에서 내려요" : "🛑 이번 정류장에서 내리세요"}</p><p class="bus-row">${esc(HS.levelText(lv))}</p>` : "")
+      + (rem ? `<p class="ride-left">${esc(rem)}</p>` : "") + (nxt ? `<p class="bus-row">${esc(nxt)}</p>` : "")
+      + (!p ? `<p class="bus-row">위치를 찾는 중이에요. 버스 안 안내 방송과 정류장 이름을 확인하세요.</p>` : "");
+  };
+  HS.rideTick = () => {
+    const R = HS.ride;
+    if (state.screen !== "outdoor" || !$("#hsMapBody")) { clearInterval(R.timer); R.timer = null; return; }
+    const p = HS.fix();
+    if (p && HS.rideFor(R.step)) {
+      const br = HSROUTE.points[1].busRoute;
+      R.prog = HSM.ridingProgress(p, HS.rideStops(), br.alightSeq, R.prog);
+      const lv = HSM.stopAlertLevel(p, br, R.level);
+      if (lv !== R.level) { R.level = lv; vibrate([400, 200, 400]); speak(HS.levelText(lv)); }
+    }
+    HS.paintMap(R.step);
+  };
+  HS.mountMap = (step) => {
+    const R = HS.ride; clearInterval(R.timer); R.timer = null; R.prog = null; R.level = "far"; R.step = null;
+    if (!HS.isDefault(step)) return;
+    const after = $("#busCard") || $(".card");
+    if (!after) return;
+    const sec = document.createElement("section");
+    sec.className = "card hs-area-card"; sec.id = "hsMapCard"; sec.setAttribute("aria-live", "polite");
+    sec.innerHTML = `<p class="bus-title">🗺 ${esc(HS.ARR.routeName)}번 버스 길</p><div id="hsMapInfo"></div><div id="hsMapBody"></div>`;
+    after.after(sec);
+    if (step.type === "bus") { const mm = $("#miniMap"); if (mm) mm.remove(); }   // the straight line to the stop would hide the stop order; the SVG map replaces it on the ride step
+    R.step = step; HS.paintMap(step);
+    if (HS.rideFor(step)) R.timer = setInterval(HS.rideTick, 3000);
+  };
+  /* [ported from hospital-step] end (map) */
 
   // ───────────────────────── 목소리 (자연스럽게) ─────────────────────────
   const synth = window.speechSynthesis;
@@ -1410,6 +2087,7 @@ window.ROUTE = {
       <div id="miniMap" class="map mini" aria-label="내 위치와 목적지 지도"></div>`;
     makeMiniMap(step);
     startBus(step);
+    HS.mountMap(step); /* [ported from hospital-step] */
     if (step.type === "bus") healthDone.then(() => startRide7(step));
     $("#arrow").parentElement.classList.toggle("reduce", state.reduce);
     const arrive = btn(step.type === "bus" ? "🚌 버스에서 내렸어요" : "📍 여기에 도착했어요 · 다음", "btn-xl btn-primary", () => nextOutdoor());
@@ -1483,6 +2161,7 @@ window.ROUTE = {
 
     const weak = nav.acc != null && nav.acc > 45;
     if (step.type === "bus") {
+      if (HS.rideFor(step)) { $("#dirWord").textContent = "버스를 타고 가는 중"; setGpsStatus(`서울대병원 정류장까지 직선 ${distText(d)} (아래 지도에서 정류장 순서를 보세요)`, false); if (!nav.arrived && d < step.arriveRadius) { nav.arrived = true; vibrate([300, 100, 300]); speak("서울대병원 정류장에 도착했어요. 지금 내리세요. 내리시면 버스에서 내렸어요 버튼을 눌러 주세요."); } return; } /* [ported from hospital-step] the distance-only "곧 내려요" fires at the look-alike stop; the ride tracker below the card uses stop order instead */
       $("#dirWord").textContent = d < (step.nearRadius || 400) ? "곧 내려요!" : "버스를 타고 가는 중";
       const alightName = (step.place.split("→")[1] || "내릴 정류장").trim();
       setGpsStatus(`${alightName}까지 ${distText(d)}${weak ? " · 위치 오차가 커요" : ""}`, weak);

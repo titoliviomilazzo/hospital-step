@@ -116,18 +116,30 @@ export async function fetchArrival(url, cfg, options) {
  * Same request as fetchArrival, resolving to {parsed, seqs} (parsed as above, seqs from parseBusSeqs),
  * or null on any failure. One request serves both the sentence and the buses on the map.
  */
-export async function fetchArrivalDetail(url, { stationId, routeId, loopStops, boardSeq }, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
+export const GBIS_LOCATION_URL = 'https://apis.data.go.kr/6410000/buslocationservice/v2/getBusLocationListv2';
+
+/** Direct GBIS request URL (the browser may call it: the API allows cross-origin reads). */
+export function directLocationUrl(key, routeId) {
+  const q = new URLSearchParams({ serviceKey: key, routeId: String(routeId), format: 'json' });
+  return `${GBIS_LOCATION_URL}?${q}`;
+}
+
+export async function fetchArrivalDetail(url, { stationId, routeId, loopStops, boardSeq }, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS, key = '' } = {}) {
   const ctl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = setTimeout(() => { if (ctl) ctl.abort(); }, timeoutMs);
   let guard = null;
   try {
-    const res = await Promise.race([
-      fetchImpl(url, {
+    // With a key the app asks GBIS itself (GET); otherwise it POSTs to the proxy at `url`.
+    const request = key
+      ? fetchImpl(directLocationUrl(key, routeId), { signal: ctl ? ctl.signal : undefined })
+      : fetchImpl(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stationId, routeId }),
         signal: ctl ? ctl.signal : undefined,
-      }),
+      });
+    const res = await Promise.race([
+      request,
       new Promise((_, rej) => { guard = setTimeout(() => rej(new Error('timeout')), timeoutMs + 50); }),
     ]);
     if (!res.ok) return null;

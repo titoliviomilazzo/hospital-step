@@ -25,7 +25,7 @@ import {
 } from './notes-flow.js';
 import { createNotesUi } from './notes-ui.js';
 import { listRecords, getRecord, clearRecords } from './notes-store.js';
-import { WEBHOOK_URL, ARRIVAL_URL, NOTES_URL } from '../config.js';
+import { WEBHOOK_URL, ARRIVAL_URL, NOTES_URL, BUS_KEY } from '../config.js';
 import { APP_VERSION, versioned } from './version.js';
 import { attachZoom } from './zoom.js';
 
@@ -764,7 +764,7 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
     arrivalPointId = wanted.id;
     const token = arrivalToken;
     const load = async () => {
-      const detail = await fetchArrivalDetail(ARRIVAL_URL, wanted.arrival);
+      const detail = await fetchArrivalDetail(ARRIVAL_URL, wanted.arrival, { key: BUS_KEY });
       if (token !== arrivalToken) return;
       const parsed = detail ? detail.parsed : null;
       const seqs = detail ? detail.seqs : [];
