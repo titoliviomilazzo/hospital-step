@@ -527,14 +527,14 @@ input[type=text],input[type=password],input[type=tel]{min-height:56px; font-size
  * ===================================================================== */
 
 /* ---------- 설정 ---------- */
-var DEFAULT_KEY = ""; /* no key in the public build: demo mode until a key is entered in settings */
-var CFG = { apiKey: DEFAULT_KEY, demo: !DEFAULT_KEY };
+var DEFAULT_KEY = "81407e8d62e71edecba16d868d250c0e247f016fa307230859843ae4ca3ee2c4";
+var CFG = { apiKey: DEFAULT_KEY, demo: false };
 try {
-  var saved = JSON.parse(localStorage.getItem("hh_cfg") || "{}");
+  var saved = JSON.parse(localStorage.getItem("hh_cfg_v2") || "{}");
   if (saved.apiKey) CFG.apiKey = saved.apiKey;
   if ("demo" in saved) CFG.demo = !!saved.demo;
 } catch (e) { /* localStorage 사용 불가 환경: 기본값 유지 */ }
-function saveCfg() { try { localStorage.setItem("hh_cfg", JSON.stringify(CFG)); } catch (e) {} }
+function saveCfg() { try { localStorage.setItem("hh_cfg_v2", JSON.stringify(CFG)); } catch (e) {} }
 
 var HOSPITAL_PRESETS = [
   "아주대학교병원", "분당서울대학교병원", "성빈센트병원", "수원시립노인전문병원",
