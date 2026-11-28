@@ -68,9 +68,14 @@ body.modal-open { overflow: hidden; }
   font-size: var(--fs-instr); line-height: 1.3; margin: 8px 0 12px; font-weight: 800;
   word-break: keep-all; overflow-wrap: break-word;
 }
-/* Header line above the instruction on route point screens: app icon, label, speaking bars (decorative). */
+/* Header line above the instruction on route and prepare screens: app icon, label, speaking bars (decorative). */
 .instr-line { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; }
 .instr-line[hidden] { display: none; }
+/* Prepare screens: compact variant (small icon and label, tight margins) so the answers stay above the bar. */
+.instr-line.compact { margin: 4px 0 2px; gap: 6px; }
+.instr-line.compact img { width: 26px; height: 26px; border-radius: 7px; }
+.instr-line.compact .instr-label { font-size: 15px; }
+.instr-line.compact:not([hidden]) + #live .instruction { margin-top: 2px; }
 .instr-line img { width: 34px; height: 34px; border-radius: 9px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
 .instr-label { font-size: 17px; font-weight: 800; color: #9a3412; }
 .speaking-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 18px; }
@@ -138,13 +143,15 @@ h2 { font-size: 1.1em; margin: 0 0 8px; }
 .edit-btn { min-height: 64px; min-width: 88px; font-size: 24px; flex: 0 0 auto; }
 
 /* Question screens: a hero illustration above the choices. Its height grows with the screen height
-   (96px at 664px tall, 132px max at 700px, 72px minimum) so the answer buttons stay above the bar; on 664px
-   screens the [말로 대답하기] button may need a scroll. */
+   (see --hero-h below: 100vh - 592px, clamped to 72..132px) so the answer buttons stay above the bar. The 592 is the
+   old 568 plus 24px for the compact prepare header line (4px top margin + 26px icon + 2px gap, minus the 8px
+   instruction top margin it replaces). At 664px tall the formula gives exactly 72px, the minimum, so the hero is
+   72px (it was 96px before the header line); the answers sit about where they did before the line. */
 .hero { display: flex; justify-content: center; align-items: center; gap: 12px; }
 .hero svg { height: var(--hero-h, 96px); width: auto; aspect-ratio: 1 / 1; max-width: 45%; flex: 0 1 auto; }
 /* Compact on every question screen: the answer buttons must stay above the bar on small phones. */
-.hero svg { --hero-h: clamp(72px, calc(100vh - 568px), 132px); }
-@supports (height: 100dvh) { .hero svg { --hero-h: clamp(72px, calc(100dvh - 568px), 132px); } }
+.hero svg { --hero-h: clamp(72px, calc(100vh - 592px), 132px); }
+@supports (height: 100dvh) { .hero svg { --hero-h: clamp(72px, calc(100dvh - 592px), 132px); } }
 .hero-mobility { display: none; } /* the three answer buttons already carry the walker and wheelchair icons */
 /* Short phones (iPhone SE + browser chrome): drop the hero and the dots, the progress number stays. */
 @media (max-height: 640px) {

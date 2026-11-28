@@ -1770,11 +1770,12 @@ function boot(baseRoute, support, floor = null, area = null, sample = null, samp
     $('brand').hidden = !showBrand(state, nScreen);
     if (nScreen) setInstruction(nScreen.instruction);
     else if (p) setInstruction(state.arrived ? ARRIVED_TEXT : p.display, !state.arrived);
-    else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]]);
+    else setInstruction(STEP_SCREEN_TEXT[state.prepStep] || CLIP_TEXT[STEP_CLIP[state.prepStep]], true);
 
     // While the get-off watch runs the instruction shrinks, so the alert, the stop count and the next
     // stop sit above the fixed bar (the rider already read the instruction before turning the watch on).
-    $('instr-line').hidden = !p || Boolean(nScreen); // the decorative header line: route point screens only
+    $('instr-line').hidden = Boolean(nScreen);
+    $('instr-line').classList.toggle('compact', !p && !nScreen); // prepare screens: the small header line // the decorative header line: route and prepare screens, not notes/records
     $('instruction').classList.toggle('compact', Boolean((p && p.alertCoord) || (nScreen && nScreen.compact)
       || (p && !nScreen && p.kind !== 'bus' && arrowInfo()) // the big arrow must fit above the bar
       || (p && isConsultPoint(p)) || (p && state.arrived && state.index === route.points.length - 1))); // I4 / arrival: the room / show-the-doctor buttons must stay above the bar
